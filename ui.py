@@ -6,6 +6,9 @@ import threading
 import time
 import datetime
 from PIL import Image, ImageTk
+import csv
+import openpyxl
+from openpyxl.styles import Font
 import automate2  # Imports your existing automation script
 
 # Ensure we are in the correct directory so images and config load properly
@@ -105,17 +108,14 @@ class AutoUI:
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
         
         self.tab_pending = ttk.Frame(self.notebook)
-        self.tab_success = ttk.Frame(self.notebook)
         self.tab_created = ttk.Frame(self.notebook)
         self.tab_failed = ttk.Frame(self.notebook)
-        
         self.tab_skipped = ttk.Frame(self.notebook)
         self.tab_another_account = ttk.Frame(self.notebook)
         self.tab_service_unavailable = ttk.Frame(self.notebook)
         self.tab_unable_to_verify = ttk.Frame(self.notebook)
         
         self.notebook.add(self.tab_pending, text="  ⏳ Pending  ")
-        self.notebook.add(self.tab_success, text="  ✅ Success  ")
         self.notebook.add(self.tab_created, text="  🌟 Created  ")
         self.notebook.add(self.tab_failed, text="  ❌ Failed  ")
         self.notebook.add(self.tab_skipped, text="  ⏭ Skipped  ")
@@ -127,17 +127,52 @@ class AutoUI:
         columns_pending = ("ID", "Email", "Username", "Status")
         columns_done = ("ID", "Email", "Username", "Time Ran", "Status")
         
-        self.tree_pending = self.create_treeview(self.tab_pending, columns_pending)
-        self.tree_success = self.create_treeview(self.tab_success, columns_done)
-        self.tree_created = self.create_treeview(self.tab_created, columns_done)
-        self.tree_failed = self.create_treeview(self.tab_failed, columns_done + ("Reason",))
-        self.tree_skipped = self.create_treeview(self.tab_skipped, columns_done + ("Reason",))
-        self.tree_another_account = self.create_treeview(self.tab_another_account, columns_done + ("Reason",))
-        self.tree_service_unavailable = self.create_treeview(self.tab_service_unavailable, columns_done + ("Reason",))
-        self.tree_unable_to_verify = self.create_treeview(self.tab_unable_to_verify, columns_done + ("Reason",))
+        self.tree_pending = self.create_treeview(self.tab_pending, columns_pending, "pending")
+        self.tree_created = self.create_treeview(self.tab_created, columns_done, "created")
+        self.tree_failed = self.create_treeview(self.tab_failed, columns_done + ("Reason",), "failed")
+        self.tree_skipped = self.create_treeview(self.tab_skipped, columns_done + ("Reason",), "skipped")
+        self.tree_another_account = self.create_treeview(self.tab_another_account, columns_done + ("Reason",), "another_account")
+        self.tree_service_unavailable = self.create_treeview(self.tab_service_unavailable, columns_done + ("Reason",), "service_unavailable")
+        self.tree_unable_to_verify = self.create_treeview(self.tab_unable_to_verify, columns_done + ("Reason",), "unable_to_verify")
+        
+        self.tabs_info = [
+            ("pending", self.tab_pending, self.tree_pending, columns_pending),
+            ("created", self.tab_created, self.tree_created, columns_done),
+            ("failed", self.tab_failed, self.tree_failed, columns_done + ("Reason",)),
+            ("skipped", self.tab_skipped, self.tree_skipped, columns_done + ("Reason",)),
+            ("another_account", self.tab_another_account, self.tree_another_account, columns_done + ("Reason",)),
+            ("service_unavailable", self.tab_service_unavailable, self.tree_service_unavailable, columns_done + ("Reason",)),
+            ("unable_to_verify", self.tab_unable_to_verify, self.tree_unable_to_verify, columns_done + ("Reason",)),
+        ]
 
-    def create_treeview(self, parent, columns):
-        tree = ttk.Treeview(parent, columns=columns, show="headings", selectmode="extended")
+    def create_treeview(self, parent, columns, tab_name):
+        # --- Frame for controls and treeview ---
+        container = tk.Frame(parent)
+        container.pack(fill=tk.BOTH, expand=True)
+        
+        # --- Control Bar --- 
+        control_bar = tk.Frame(container, bg="#ffffff", pady=5, padx=10)
+        control_bar.pack(side=tk.TOP, fill=tk.X)
+        
+        tk.Label(control_bar, text="Filter by Date:", font=("Segoe UI", 10, "bold"), bg="#ffffff").pack(side=tk.LEFT, padx=5)
+        date_var = tk.StringVar(value="All Dates")
+        date_combo = ttk.Combobox(control_bar, textvariable=date_var, state="readonly", width=20)
+        date_combo.pack(side=tk.LEFT, padx=5)
+        date_combo.bind("<<ComboboxSelected>>", lambda e, t=tab_name, v=date_var: self.filter_by_date(t, v))
+        
+        tk.Button(control_bar, text="📥 Export JSON", command=lambda t=tab_name: self.export_data(t, "json"), 
+                  bg="#e2e8f0", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=10).pack(side=tk.RIGHT, padx=5)
+        tk.Button(control_bar, text="📥 Export CSV", command=lambda t=tab_name: self.export_data(t, "csv"), 
+                  bg="#e2e8f0", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=10).pack(side=tk.RIGHT, padx=5)
+        tk.Button(control_bar, text="📥 Export Excel", command=lambda t=tab_name: self.export_data(t, "excel"), 
+                  bg="#e2e8f0", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=10).pack(side=tk.RIGHT, padx=5)
+        
+        if tab_name not in ["pending", "created"]:
+            tk.Button(control_bar, text="🔄 Mark All & Send to Pending", command=lambda t=tab_name: self.send_to_pending(t), 
+                      bg="#ffc107", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=10).pack(side=tk.RIGHT, padx=5)
+        
+        # --- Treeview --- 
+        tree = ttk.Treeview(container, columns=columns, show="headings", selectmode="extended")
         for col in columns:
             tree.heading(col, text=col)
             if col == "ID":
@@ -151,7 +186,7 @@ class AutoUI:
             else:
                 tree.column(col, width=200)
             
-        scrollbar = ttk.Scrollbar(parent, orient=tk.VERTICAL, command=tree.yview)
+        scrollbar = ttk.Scrollbar(container, orient=tk.VERTICAL, command=tree.yview)
         tree.configure(yscroll=scrollbar.set)
         
         # Alternate row colors
@@ -168,6 +203,9 @@ class AutoUI:
         menu.add_separator()
         menu.add_command(label="▶ Run This Account", command=lambda: self.run_single(tree))
         menu.add_command(label="🖼 View Screenshot", command=lambda: self.view_screenshot(tree))
+        if tab_name not in ["pending", "created"]:
+            menu.add_separator()
+            menu.add_command(label="🔄 Send to Pending", command=lambda t=tab_name, tr=tree: self.send_selected_to_pending(t, tr))
         
         def show_menu(event):
             item = tree.identify_row(event.y)
@@ -178,13 +216,40 @@ class AutoUI:
                 
         tree.bind("<Button-3>", show_menu)
         tree.bind("<Double-1>", lambda e: self.view_screenshot(tree))
+        
+        # Store date combo for this tab
+        self.__dict__[f"date_combo_{tab_name}"] = date_combo
+        self.__dict__[f"date_var_{tab_name}"] = date_var
+        
         return tree
 
     def refresh_lists(self):
-        for tree in (self.tree_pending, self.tree_success, self.tree_created, self.tree_failed, self.tree_skipped, self.tree_another_account, self.tree_service_unavailable, self.tree_unable_to_verify):
+        # Clear all trees
+        trees = [self.tree_pending, self.tree_created, self.tree_failed, self.tree_skipped, 
+                 self.tree_another_account, self.tree_service_unavailable, self.tree_unable_to_verify]
+        for tree in trees:
             for item in tree.get_children():
                 tree.delete(item)
                 
+        # Collect all unique dates
+        dates = set()
+        for idx, acc in enumerate(self.accounts):
+            timestamp = acc.get("timestamp", "-")
+            if timestamp != "-":
+                date_part = timestamp.split(" ")[0]
+                dates.add(date_part)
+        
+        sorted_dates = sorted(dates, reverse=True)
+        
+        # Update all date combos
+        for tab_name, _, _, _ in self.tabs_info:
+            combo = self.__dict__[f"date_combo_{tab_name}"]
+            current_val = self.__dict__[f"date_var_{tab_name}"].get()
+            combo['values'] = ["All Dates"] + sorted_dates
+            if current_val not in combo['values']:
+                self.__dict__[f"date_var_{tab_name}"].set("All Dates")
+        
+        # Now populate the trees
         for idx, acc in enumerate(self.accounts):
             status = "Pending"
             timestamp = acc.get("timestamp", "-")
@@ -200,14 +265,12 @@ class AutoUI:
                 if acc.get("created"):
                     status = "Created"
                 else:
-                    status = "Success" if acc.get("success") else "Failed"
+                    status = "Failed"
                 
             tag = 'evenrow' if idx % 2 == 0 else 'oddrow'
             
             if status == "Pending":
                 self.tree_pending.insert("", tk.END, values=[idx, acc.get("email", ""), acc.get("username", ""), status], tags=(tag,))
-            elif status == "Success":
-                self.tree_success.insert("", tk.END, values=[idx, acc.get("email", ""), acc.get("username", ""), timestamp, status], tags=(tag,))
             elif status == "Created":
                 self.tree_created.insert("", tk.END, values=[idx, acc.get("email", ""), acc.get("username", ""), timestamp, status], tags=(tag,))
             elif status == "Failed":
@@ -220,6 +283,186 @@ class AutoUI:
                 self.tree_service_unavailable.insert("", tk.END, values=[idx, acc.get("email", ""), acc.get("username", ""), timestamp, status, acc.get("reason", "")], tags=(tag,))
             elif status == "Unable to Verify":
                 self.tree_unable_to_verify.insert("", tk.END, values=[idx, acc.get("email", ""), acc.get("username", ""), timestamp, status, acc.get("reason", "")], tags=(tag,))
+    
+    def get_accounts_for_tab(self, tab_name):
+        accs = []
+        for idx, acc in enumerate(self.accounts):
+            status = "Pending"
+            if acc.get("skipped"):
+                status = "Skipped"
+            elif acc.get("unable_to_verify"):
+                status = "Unable to Verify"
+            elif acc.get("we_found_another_account"):
+                status = "Another Account"
+            elif acc.get("service_not_available"):
+                status = "Service Unavailable"
+            elif acc.get("ran"):
+                if acc.get("created"):
+                    status = "Created"
+                else:
+                    status = "Failed"
+            
+            tab_status_map = {
+                "pending": "Pending",
+                "created": "Created",
+                "failed": "Failed",
+                "skipped": "Skipped",
+                "another_account": "Another Account",
+                "service_unavailable": "Service Unavailable",
+                "unable_to_verify": "Unable to Verify"
+            }
+            
+            if status == tab_status_map[tab_name]:
+                acc_copy = acc.copy()
+                acc_copy["id"] = idx
+                accs.append(acc_copy)
+        return accs
+    
+    def filter_by_date(self, tab_name, date_var):
+        # First refresh all trees, then filter the selected tab's tree
+        self.refresh_lists()
+        
+        filter_date = date_var.get()
+        if filter_date == "All Dates":
+            return
+            
+        # Find the tree for this tab
+        tree = None
+        for name, _, tr, _ in self.tabs_info:
+            if name == tab_name:
+                tree = tr
+                break
+        
+        if not tree:
+            return
+            
+        # Filter the tree
+        for item in tree.get_children():
+            values = tree.item(item, "values")
+            if len(values) > 3: # has Time Ran
+                timestamp = values[3]
+                if timestamp.startswith(filter_date):
+                    continue
+            tree.delete(item)
+    
+    def export_data(self, tab_name, export_format):
+        accounts = self.get_accounts_for_tab(tab_name)
+        
+        # Filter by date
+        filter_date = self.__dict__[f"date_var_{tab_name}"].get()
+        if filter_date != "All Dates":
+            filtered = []
+            for acc in accounts:
+                timestamp = acc.get("timestamp", "-")
+                if timestamp.startswith(filter_date):
+                    filtered.append(acc)
+            accounts = filtered
+        
+        if not accounts:
+            messagebox.showinfo("Info", "No data to export.")
+            return
+        
+        filetypes = {
+            "json": [("JSON Files", "*.json")],
+            "csv": [("CSV Files", "*.csv")],
+            "excel": [("Excel Files", "*.xlsx")]
+        }
+        
+        ext = "json" if export_format == "json" else "csv" if export_format == "csv" else "xlsx"
+        file_path = filedialog.asksaveasfilename(defaultextension=f".{ext}", filetypes=filetypes[export_format])
+        if not file_path:
+            return
+        
+        try:
+            if export_format == "json":
+                with open(file_path, "w") as f:
+                    json.dump(accounts, f, indent=4)
+            elif export_format == "csv":
+                # Get all possible keys from accounts
+                keys = set()
+                for acc in accounts:
+                    keys.update(acc.keys())
+                keys = sorted(list(keys))
+                
+                with open(file_path, "w", newline="", encoding="utf-8") as f:
+                    writer = csv.DictWriter(f, fieldnames=keys)
+                    writer.writeheader()
+                    for acc in accounts:
+                        writer.writerow(acc)
+            elif export_format == "excel":
+                wb = openpyxl.Workbook()
+                ws = wb.active
+                ws.title = tab_name.capitalize()
+                
+                # Get all possible keys from accounts
+                keys = set()
+                for acc in accounts:
+                    keys.update(acc.keys())
+                keys = sorted(list(keys))
+                
+                # Write headers
+                for col, key in enumerate(keys, 1):
+                    cell = ws.cell(row=1, column=col, value=key)
+                    cell.font = Font(bold=True)
+                
+                # Write data
+                for row, acc in enumerate(accounts, 2):
+                    for col, key in enumerate(keys, 1):
+                        ws.cell(row=row, column=col, value=acc.get(key, ""))
+                
+                wb.save(file_path)
+            
+            messagebox.showinfo("Success", f"Data exported successfully to {file_path}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export data: {e}")
+    
+    def send_to_pending(self, tab_name):
+        if not messagebox.askyesno("Confirm", "Mark all accounts in this tab as pending and reset?"):
+            return
+        
+        accounts = self.get_accounts_for_tab(tab_name)
+        for acc_copy in accounts:
+            idx = acc_copy["id"]
+            acc = self.accounts[idx]
+            acc["ran"] = False
+            acc["success"] = False
+            acc["created"] = False
+            acc["skipped"] = False
+            acc["we_found_another_account"] = False
+            acc["service_not_available"] = False
+            acc["unable_to_verify"] = False
+            acc["reason"] = ""
+            acc.pop("screenshot", None)
+            acc.pop("timestamp", None)
+        
+        self.save_accounts()
+        self.refresh_lists()
+        messagebox.showinfo("Success", "All accounts sent to Pending.")
+    
+    def send_selected_to_pending(self, tab_name, tree):
+        indices = self.get_selected_indices(tree)
+        if not indices:
+            return
+        
+        if not messagebox.askyesno("Confirm", f"Mark {len(indices)} account(s) as pending and reset?"):
+            return
+        
+        for idx in indices:
+            acc = self.accounts[idx]
+            acc["ran"] = False
+            acc["success"] = False
+            acc["created"] = False
+            acc["skipped"] = False
+            acc["we_found_another_account"] = False
+            acc["service_not_available"] = False
+            acc["unable_to_verify"] = False
+            acc["reason"] = ""
+            acc.pop("screenshot", None)
+            acc.pop("timestamp", None)
+        
+        self.save_accounts()
+        self.refresh_lists()
+        messagebox.showinfo("Success", "Selected accounts sent to Pending.")
 
     def open_settings(self):
         dialog = tk.Toplevel(self.root)
