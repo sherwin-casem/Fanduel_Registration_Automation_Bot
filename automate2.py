@@ -162,12 +162,27 @@ def get_next_url_and_proxy(settings, account_config=None):
     best_proxy = None
     min_wait = float('inf')
     
-    for proxy in proxies:
-        last_use = proxy.get("last_use", 0)
-        wait_time = max(0, cooldown - (now - last_use))
-        if wait_time < min_wait:
-            min_wait = wait_time
-            best_proxy = proxy
+    # First, try to find a proxy that has NEVER been used (last_use == 0)
+    unused_proxies = [p for p in proxies if p.get("last_use", 0) == 0]
+    
+    if unused_proxies:
+        best_proxy = unused_proxies[0]
+        min_wait = 0
+    else:
+        # If all proxies have been used at least once, find the one with the lowest wait time
+        for proxy in proxies:
+            last_use = proxy.get("last_use", 0)
+            wait_time = max(0, cooldown - (now - last_use))
+            
+            # If wait_time is 0, it means it's fully cooled down. Use it immediately.
+            if wait_time == 0:
+                best_proxy = proxy
+                min_wait = 0
+                break
+                
+            if wait_time < min_wait:
+                min_wait = wait_time
+                best_proxy = proxy
             
     # Mark it as used (projecting into the future if we have to wait)
     best_proxy["last_use"] = now + min_wait

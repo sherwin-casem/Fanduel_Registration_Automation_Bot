@@ -975,11 +975,11 @@
         "city": "bailieboro",
         "province": "ON",
         "postcode": "K0L 1B0",
-        "ran": true,
+        "ran": false,
         "success": false,
         "created": false,
         "skipped": false,
-        "reason": "PyAutoGUI fail-safe triggered from mouse moving to a corner of the screen. To disable this fail-safe, set pyautogui.FAILSAFE to False. DISABLING FAIL-SAFE IS NOT RECOMMENDED.",
+        "reason": "",
         "screenshot": "images_result\\2026-06-18\\error_zge868tn.png",
         "timestamp": "2026-06-18 02:36:12",
         "referral_url": ""
@@ -1235,7 +1235,17 @@
         "address": "531 cardinal drive",
         "city": "peterborough",
         "province": "ON",
-        "postcode": "K9L 1X8"
+        "postcode": "K9L 1X8",
+        "ran": true,
+        "success": false,
+        "created": false,
+        "skipped": true,
+        "we_found_another_account": false,
+        "service_not_available": false,
+        "unable_to_verify": false,
+        "reason": "Account already exist",
+        "screenshot": "images_result\\2026-06-18\\error_kklqs0jk.png",
+        "timestamp": "2026-06-18 06:47:57"
     },
     {
         "email": "c.corrin754@gmail.com",
@@ -1252,7 +1262,17 @@
         "address": "1714 main st w",
         "city": "hamilton",
         "province": "ON",
-        "postcode": "L8S 1G8"
+        "postcode": "L8S 1G8",
+        "ran": true,
+        "success": false,
+        "created": false,
+        "skipped": true,
+        "we_found_another_account": false,
+        "service_not_available": false,
+        "unable_to_verify": false,
+        "reason": "Account already exist",
+        "screenshot": "images_result\\2026-06-18\\error_pgv77io9.png",
+        "timestamp": "2026-06-18 06:52:09"
     },
     {
         "email": "natalyaw200+help@gmail.com",
@@ -1269,7 +1289,18 @@
         "address": "9 primont drive",
         "city": "richmond hill",
         "province": "ON",
-        "postcode": "L4S 2V5"
+        "postcode": "L4S 2V5",
+        "ran": false,
+        "success": false,
+        "created": false,
+        "skipped": false,
+        "we_found_another_account": false,
+        "service_not_available": false,
+        "unable_to_verify": false,
+        "reason": "",
+        "screenshot": "images_result\\2026-06-18\\error_h6p7o7jf.png",
+        "timestamp": "2026-06-18 06:56:48",
+        "referral_url": ""
     },
     {
         "email": "mmurad676767+demo@gmail.com",
@@ -1286,7 +1317,17 @@
         "address": "91 stirling cres",
         "city": "markham",
         "province": "ON",
-        "postcode": "L3R 7J9"
+        "postcode": "L3R 7J9",
+        "ran": true,
+        "success": true,
+        "created": false,
+        "skipped": false,
+        "we_found_another_account": false,
+        "service_not_available": false,
+        "unable_to_verify": true,
+        "reason": "Unable to verify data",
+        "screenshot": "images_result\\2026-06-18\\unable_to_verify_nkpmqvzi.png",
+        "timestamp": "2026-06-18 07:03:50"
     },
     {
         "email": "e.manahmed009001@gmail.com",
@@ -1303,7 +1344,17 @@
         "address": "20 albion st.",
         "city": "sault ste. marie",
         "province": "ON",
-        "postcode": "P6B 6A3"
+        "postcode": "P6B 6A3",
+        "ran": true,
+        "success": true,
+        "created": true,
+        "skipped": false,
+        "we_found_another_account": false,
+        "service_not_available": false,
+        "unable_to_verify": false,
+        "reason": "Successfully completed.",
+        "screenshot": "images_result\\2026-06-18\\success_zpudbl9q.png",
+        "timestamp": "2026-06-18 07:11:42"
     },
     {
         "email": "kpingali175+mail@gmail.com",
