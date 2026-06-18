@@ -783,7 +783,7 @@ def main(config, url, proxy=None):
         print("Looking for 'do it later' image...")
         if human_click_image("do_it_later.png", confidence=0.8):
             print("'Do it later' clicked.")
-            time.sleep(7)
+            time.sleep(15)
         else:
             print("'Do it later' image not found, proceeding anyway...")
             
