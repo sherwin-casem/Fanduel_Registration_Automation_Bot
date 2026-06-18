@@ -1102,15 +1102,16 @@
         "province": "ON",
         "postcode": "N2J 4G3",
         "ran": true,
-        "success": false,
-        "created": false,
+        "success": true,
+        "created": true,
         "skipped": false,
         "we_found_another_account": false,
-        "reason": "Create Account button not found.",
-        "screenshot": "images_result\\2026-06-18\\error_xz64mbvm.png",
-        "timestamp": "2026-06-18 04:14:26",
+        "reason": "Successfully completed.",
+        "screenshot": "images_result\\2026-06-18\\success_yhyiwmbs.png",
+        "timestamp": "2026-06-18 06:35:41",
         "referral_url": "",
-        "service_not_available": false
+        "service_not_available": false,
+        "unable_to_verify": false
     },
     {
         "email": "mmurad676767+2@gmail.com",

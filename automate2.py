@@ -196,6 +196,19 @@ def kill_browser():
         except Exception:
             pass
     subprocess.run(["taskkill", "/F", "/IM", "msedge.exe", "/T"], capture_output=True)
+    
+    # Wait to ensure processes are fully terminated before trying to delete files
+    time.sleep(3)
+    
+    # Delete the temporary Edge profile directory
+    profile_dir = r"C:\temp\edge-proxy-profile3"
+    if os.path.exists(profile_dir):
+        try:
+            import shutil
+            shutil.rmtree(profile_dir, ignore_errors=True)
+            print(f"Deleted temporary profile: {profile_dir}")
+        except Exception as e:
+            print(f"Could not fully delete profile directory: {e}")
 
 def launch_chrome_with_proxy(url, proxy=None):
     global BROWSER_PROC

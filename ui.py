@@ -635,7 +635,7 @@ class AutoUI:
                     wait_time_minutes = 10 if success else 11
                     total_seconds = wait_time_minutes * 60
                 else:
-                    total_seconds = 5 # Small buffer when multiple proxies
+                    total_seconds = 120 # Minimum 2 minutes buffer when multiple proxies exist
                 
                 # Custom wait loop with countdown display
                 for remaining in range(total_seconds, 0, -1):
