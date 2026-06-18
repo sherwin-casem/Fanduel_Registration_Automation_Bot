@@ -571,6 +571,12 @@ class AutoUI:
             last_name = automate2.clean_special_characters(current_config.get("lastName", "last"))
             current_config["username"] = f"{last_name}{first_name}{automate2.random.randint(1000, 9999)}"
             
+            # Check and update password if it's less than 8 characters
+            if len(current_config.get("password", "")) < 8:
+                new_password = f"{current_config.get('password', '')}{last_name}"
+                current_config["password"] = new_password
+                acc["password"] = new_password
+            
             try:
                 is_created, status = automate2.main(current_config, url, proxy)
                 success = True
@@ -619,6 +625,7 @@ class AutoUI:
             acc["unable_to_verify"] = ("Unable to verify" in reason)
             acc["reason"] = reason
             acc["screenshot"] = screenshot_path
+            acc["username"] = current_config["username"] # Save generated username
             acc["timestamp"] = timestamp
             
             self.save_accounts()

@@ -405,6 +405,8 @@ def main(config, url, proxy=None):
 
     # 2. Email field
     # Try image first, fallback to coordinates
+    
+    
     if not human_click_image("email1.png"):
         if not human_click_coords(519, 386):
             raise Exception("Email field not found - image and coordinates both failed.")
@@ -525,7 +527,7 @@ def main(config, url, proxy=None):
         random_delay(5, 8)
         
         # Verify if it went through by checking if firstname field is still there
-        if not wait_for_image("firstname_field.png", timeout=3):
+        if not wait_for_image("firstname_field.png", timeout=7):
             print("Name page successful, moving to next.")
             break
         print("Name page failed to advance, retrying...")
@@ -658,7 +660,7 @@ def main(config, url, proxy=None):
                 human_click_coords(586, 647)
                 
             click_image_or_coord("signature_field.png", 586, 647)
-            clear_and_type(f"{config['firstName']}{config['lastName']}", 30)
+            clear_and_type(f"{config['firstName']} {config['lastName']}", 30)
         else:
             print("Retrying Job & Signature page with fallback...")
             # Scroll back up to reset view
@@ -774,7 +776,7 @@ def main(config, url, proxy=None):
         else:
             print("Second continue image not found, proceeding anyway...")
             
-        time.sleep(10)
+        time.sleep(15)
         
         print("Scrolling down one last time (-700)...")
         pyautogui.scroll(-700)
@@ -859,6 +861,13 @@ def run_all_accounts():
         random_digits = random.randint(1000, 9999)
         current_config["username"] = f"{last_name}{first_name}{random_digits}"
         print(f"Generated username: {current_config['username']} (cleaned from {current_config.get('firstName')} {current_config.get('lastName')})")
+        
+        # Check and update password if it's less than 8 characters
+        if len(current_config.get("password", "")) < 8:
+            new_password = f"{current_config.get('password', '')}{last_name}"
+            current_config["password"] = new_password
+            account_data["password"] = new_password
+            print(f"Password was less than 8 characters. Updated password to: {new_password}")
                 
         url, proxy, wait_time = get_next_url_and_proxy(settings, current_config)
         if wait_time > 0:
@@ -909,6 +918,7 @@ def run_all_accounts():
         account_data["unable_to_verify"] = ("Unable to verify" in str(reason))
         account_data["reason"] = reason
         account_data["screenshot"] = screenshot_path
+        account_data["username"] = current_config["username"] # Ensure UI/JSON saves the generated username
         account_data["timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         # Save progress immediately
