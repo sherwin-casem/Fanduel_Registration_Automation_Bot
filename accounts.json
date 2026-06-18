@@ -1187,15 +1187,16 @@
         "city": "ancaster",
         "province": "ON",
         "postcode": "L9G 0H2",
-        "ran": true,
-        "success": true,
+        "ran": false,
+        "success": false,
         "created": false,
         "skipped": false,
         "we_found_another_account": false,
         "service_not_available": true,
-        "reason": "Service not available",
+        "reason": "",
         "screenshot": "images_result\\2026-06-18\\service_not_available_retlqydj.png",
-        "timestamp": "2026-06-18 04:35:07"
+        "timestamp": "2026-06-18 04:35:07",
+        "referral_url": ""
     },
     {
         "email": "anjums6767+007@gmail.com",
@@ -1301,8 +1302,8 @@
         "service_not_available": false,
         "unable_to_verify": false,
         "reason": "",
-        "screenshot": "images_result\\2026-06-18\\error_h6p7o7jf.png",
-        "timestamp": "2026-06-18 06:56:48",
+        "screenshot": "images_result\\2026-06-18\\error_21qoe4fz.png",
+        "timestamp": "2026-06-18 07:31:48",
         "referral_url": ""
     },
     {
@@ -1374,7 +1375,17 @@
         "address": "484 st vincent street",
         "city": "barrie",
         "province": "ON",
-        "postcode": "L4M 6T5"
+        "postcode": "L4M 6T5",
+        "ran": true,
+        "success": true,
+        "created": true,
+        "skipped": false,
+        "we_found_another_account": false,
+        "service_not_available": false,
+        "unable_to_verify": false,
+        "reason": "Successfully completed.",
+        "screenshot": "images_result\\2026-06-18\\success_lpc5x6ub.png",
+        "timestamp": "2026-06-18 07:39:35"
     },
     {
         "email": "shussainn845+alias@gmail.com",
@@ -1391,7 +1402,18 @@
         "address": "1149 whitefish falls rd",
         "city": "whitefish falls",
         "province": "ON",
-        "postcode": "P5E 0A6"
+        "postcode": "P5E 0A6",
+        "ran": false,
+        "success": false,
+        "created": false,
+        "skipped": false,
+        "we_found_another_account": false,
+        "service_not_available": false,
+        "unable_to_verify": false,
+        "reason": "",
+        "screenshot": "images_result\\2026-06-18\\error_068vgoph.png",
+        "timestamp": "2026-06-18 07:46:47",
+        "referral_url": ""
     },
     {
         "email": "heather.dias009@gmail.com",
@@ -1408,7 +1430,17 @@
         "address": "9 lee gate",
         "city": "aurora",
         "province": "ON",
-        "postcode": "L4G 2J6"
+        "postcode": "L4G 2J6",
+        "ran": true,
+        "success": true,
+        "created": false,
+        "skipped": false,
+        "we_found_another_account": true,
+        "service_not_available": false,
+        "unable_to_verify": false,
+        "reason": "We found another account",
+        "screenshot": "images_result\\2026-06-18\\we_found_another_account_zej9xahj.png",
+        "timestamp": "2026-06-18 07:53:50"
     },
     {
         "email": "anjums6767+qa@gmail.com",

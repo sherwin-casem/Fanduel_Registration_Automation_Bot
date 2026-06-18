@@ -621,7 +621,7 @@ def main(config, url, proxy=None):
         else:
             print("Retrying address page with manual postcode fallback...")
             click_image_or_coord("address_field.png", 644, 602)
-            clear_and_type(f"{config['address']} {config['city']} {config['postcode']}", 40)
+            clear_and_type(f"{config['address']} {config['city']} {config['postcode']}", 55)
             time.sleep(3)
             human_click_coords(753, 646) # Click suggestion
             
