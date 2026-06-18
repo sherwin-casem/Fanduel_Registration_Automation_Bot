@@ -1,0 +1,41 @@
+{
+    "proxies": [
+        {
+            "host": "gate.decodo.com",
+            "port": "10050",
+            "user": "user-sph94wqr63-country-ca-city-toronto-sessionduration-900",
+            "pass": "7t+zeL4Fkw1oCaxjP6",
+            "last_use": 1781755390.7205162
+        }
+    ],
+    "url_index": 0,
+    "proxy_index": 0,
+    "referrals": [
+        {
+            "url": "https://fndl.co/0xhdyv8",
+            "enabled": true,
+            "percentage": 100
+        },
+        {
+            "url": "https://fndl.co/2ibhel0",
+            "enabled": true,
+            "percentage": 100
+        },
+        {
+            "url": "https://fndl.co/8p8h3m8",
+            "enabled": true,
+            "percentage": 100
+        },
+        {
+            "url": "https://fndl.co/ruopcws",
+            "enabled": true,
+            "percentage": 100
+        }
+    ],
+    "referral_mode": "rotate",
+    "referral_state": {
+        "index": 2,
+        "start_time": 0,
+        "random_bag": []
+    }
+}
