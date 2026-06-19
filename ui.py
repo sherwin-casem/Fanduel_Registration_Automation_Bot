@@ -883,6 +883,8 @@ class AutoUI:
     def stop_automation(self):
         if self.is_running:
             self.stop_requested = True
+            # Set the stop flag in automate2
+            automate2.set_stop_requested(True)
             self.status_lbl.config(text="🛑 Stopping... Killing browser...", fg="#dc3545")
             
             # Kill the browser using automate2's helper function
@@ -923,6 +925,8 @@ class AutoUI:
             
         self.is_running = True
         self.stop_requested = False
+        # Reset the stop flag in automate2
+        automate2.set_stop_requested(False)
         self.stop_btn.config(state=tk.NORMAL, bg="#dc3545", cursor="hand2")
         self.warning_lbl.config(text="⚠️ DO NOT TOUCH MOUSE/KEYBOARD!")
         

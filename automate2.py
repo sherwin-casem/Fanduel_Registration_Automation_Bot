@@ -11,6 +11,18 @@ import datetime
 # ------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------
+# Global stop flag
+STOP_REQUESTED = False
+
+def set_stop_requested(value):
+    global STOP_REQUESTED
+    STOP_REQUESTED = value
+
+def check_stop():
+    global STOP_REQUESTED
+    if STOP_REQUESTED:
+        raise Exception("Automation stopped by user")
+
 CONFIG_PATH = "config.json"
 DEFAULT_CONFIG = {
     "email": "mari.annesoucy716+app@gmail.com",
@@ -282,6 +294,7 @@ def random_screenshot_name(prefix="screenshot"):
 
 def take_screenshot():
     """Take a full-screen screenshot and return the filename."""
+    check_stop()
     filename = random_screenshot_name()
     pyautogui.screenshot(filename)
     print(f"Screenshot saved: {filename}")
@@ -289,7 +302,9 @@ def take_screenshot():
 
 def human_type(text, delay_range=(0.05, 0.15)):
     """Type text with random delays between keystrokes."""
+    check_stop()
     for ch in text:
+        check_stop()
         pyautogui.write(ch)
         time.sleep(random.uniform(*delay_range))
 
@@ -297,10 +312,13 @@ def human_click_coords(x, y, click=True, move_duration=None):
     """
     Move mouse smoothly to fixed coordinates and optionally click.
     """
+    check_stop()
     try:
         duration = move_duration or random.uniform(0.5, 1.5)
         pyautogui.moveTo(x, y, duration=duration, tween=pyautogui.easeOutQuad)
+        check_stop()
         time.sleep(random.uniform(0.1, 0.3))
+        check_stop()
         if click:
             pyautogui.click()
         print(f"Successfully clicked at ({x}, {y})")
@@ -314,12 +332,16 @@ def human_click_image(image_path, confidence=0.8, click=True, move_duration=None
     Locate an image on screen, move mouse smoothly, and optionally click.
     Returns True if found and clicked, False otherwise.
     """
+    check_stop()
     try:
         location = pyautogui.locateCenterOnScreen(image_path, confidence=confidence)
+        check_stop()
         if location:
             duration = move_duration or random.uniform(0.5, 1.5)
             pyautogui.moveTo(location.x, location.y, duration=duration, tween=pyautogui.easeOutQuad)
+            check_stop()
             time.sleep(random.uniform(0.1, 0.3))
+            check_stop()
             if click:
                 pyautogui.click()
             print(f"Successfully interacted with {image_path}")
@@ -333,9 +355,14 @@ def human_click_image(image_path, confidence=0.8, click=True, move_duration=None
 
 def random_delay(min_sec=8, max_sec=12):
     """Wait a random amount of time (weighted toward lower values)."""
+    check_stop()
     r = random.random() * random.random()
     delay = min_sec + r * (max_sec - min_sec)
-    time.sleep(delay)
+    # Sleep in small increments to allow checking stop flag
+    start = time.time()
+    while time.time() - start < delay:
+        check_stop()
+        time.sleep(0.1)
 
 def clean_special_characters(text):
     """
@@ -349,7 +376,9 @@ def clean_special_characters(text):
 
 def clear_and_type(text, backspace_count=20):
     """Backspace to clear a field, then type the new text."""
+    check_stop()
     for _ in range(backspace_count):
+        check_stop()
         pyautogui.press('backspace')
         time.sleep(0.01)
     human_type(text)
@@ -364,10 +393,12 @@ def click_image_or_coord(image_path, x, y, confidence=0.8):
 # ------------------------------------------------------------
 def main(config, url, proxy=None):
     print(f"Starting FanDuel automation for: {config.get('email')}")
+    check_stop()
     launch_chrome_with_proxy(url, proxy)
 
     # Wait for page to settle
     random_delay(5, 8)
+    check_stop()
     time.sleep(10)
     
     if proxy:
@@ -382,24 +413,29 @@ def main(config, url, proxy=None):
             # click the proxy username input field
             human_click_coords(557, 221)
             human_type(proxy['user'])
+            check_stop()
             time.sleep(3)
             # click the proxy password input field
             human_click_coords(563, 266)
             human_type(proxy['pass'])
+            check_stop()
             time.sleep(3)
             # click the sign in button
             human_click_coords(793, 333)
             # time.sleep(15)
         else:
             print("No proxy dialog detected. Continue workflow.")
+        check_stop()
         time.sleep(15)
     else:
         print("No proxy provided. Continue workflow.")
+        check_stop()
         time.sleep(10)
     # 1. Click Ontario button (image: ontario_button.png)
     if not human_click_coords(659, 462):
         raise Exception("Ontario button not found.")
     random_delay(4, 6)
+    check_stop()
     time.sleep(25)
     # take_screenshot()
 
@@ -413,19 +449,23 @@ def main(config, url, proxy=None):
         time.sleep(3)
 
     # Type email (reached here means one of them worked)
+    check_stop()
     time.sleep(5)
     human_type(config["email"])
     print(f"Typed email: {config['email']}")
+    check_stop()
     time.sleep(3)
 
     # 3. Continue button
     if not human_click_coords(666, 455):
         raise Exception("Continue button not found.")
     random_delay(5, 8)
+    check_stop()
     time.sleep(5)
     
     # Check if login image appears, meaning account already exists
     print("Checking if account already exists...")
+    check_stop()
     try:
         if pyautogui.locateOnScreen("login.png", confidence=0.8):
             print("Login prompt appeared, account already exists.")
@@ -438,6 +478,7 @@ def main(config, url, proxy=None):
         print("Login image not found. Proceeding with registration...")
 
     # 4. Username field
+    check_stop()
     time.sleep(5)
     # human_click_coords(597, 508)
     if not human_click_image("username1.png"):
@@ -445,25 +486,31 @@ def main(config, url, proxy=None):
             raise Exception("Username field not found - image and coordinates both failed.")
         time.sleep(3)
 
+    check_stop()
     time.sleep(3)
     human_type(config["username"])
     print(f"Typed username: {config['username']}")
+    check_stop()
     time.sleep(3)
         # take_screenshot()
     # else:
     #     raise Exception("Username field not found.")
 
     # 5. Password field
+    check_stop()
     if human_click_coords(643, 569):
         human_type(config["password"])
         print(f"Typed password: {config['password']}")
+        check_stop()
         random_delay(6, 9)
         # take_screenshot()
     else:
         raise Exception("Password field not found.")
     # --- SCROLL BEFORE CREATE ACCOUNT ---
     print("Scrolling to reveal Create Account button...")
+    check_stop()
     pyautogui.scroll(-5)
+    check_stop()
     time.sleep(1.5)
 
     # 6. Create Account button (submit)
