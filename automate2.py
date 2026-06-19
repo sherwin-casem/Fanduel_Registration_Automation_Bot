@@ -9,6 +9,34 @@ import string
 import datetime
 
 # ------------------------------------------------------------
+# STOP FLAG & EXCEPTIONS
+# ------------------------------------------------------------
+STOP_REQUESTED = False
+
+class StopAutomationException(Exception):
+    pass
+
+def check_stop():
+    """Checks if the user requested a stop or triggered failsafe."""
+    global STOP_REQUESTED
+    # Also check PyAutoGUI failsafe (mouse in corner)
+    if pyautogui.position() == (0, 0):
+        STOP_REQUESTED = True
+        
+    if STOP_REQUESTED:
+        raise StopAutomationException("Automation stopped by user.")
+
+def smart_sleep(seconds):
+    """Sleeps for given seconds but checks for stop request frequently to allow instant abort."""
+    end_time = time.time() + seconds
+    while time.time() < end_time:
+        check_stop()
+        time.sleep(0.1)
+
+# Override standard sleep in this module so we don't have to rewrite everything
+time.sleep = smart_sleep
+
+# ------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------
 CONFIG_PATH = "config.json"
@@ -204,6 +232,10 @@ BROWSER_PROC =None
 def kill_browser():
     """Forcefully kills the browser process."""
     global BROWSER_PROC
+    
+    # Also set the stop flag here just in case
+    global STOP_REQUESTED
+    STOP_REQUESTED = True
 
     if BROWSER_PROC:
         try:
@@ -262,10 +294,13 @@ def wait_for_image(image_path, timeout=15, confidence=0.8):
     start = time.time()
 
     while time.time() - start < timeout:
+        check_stop()
         try:
             pos = pyautogui.locateCenterOnScreen(image_path, confidence=confidence)
             if pos:
                 return pos
+        except StopAutomationException:
+            raise
         except Exception:
             pass
 
@@ -290,6 +325,7 @@ def take_screenshot():
 def human_type(text, delay_range=(0.05, 0.15)):
     """Type text with random delays between keystrokes."""
     for ch in text:
+        check_stop()
         pyautogui.write(ch)
         time.sleep(random.uniform(*delay_range))
 
@@ -297,6 +333,7 @@ def human_click_coords(x, y, click=True, move_duration=None):
     """
     Move mouse smoothly to fixed coordinates and optionally click.
     """
+    check_stop()
     try:
         duration = move_duration or random.uniform(0.5, 1.5)
         pyautogui.moveTo(x, y, duration=duration, tween=pyautogui.easeOutQuad)
@@ -305,6 +342,12 @@ def human_click_coords(x, y, click=True, move_duration=None):
             pyautogui.click()
         print(f"Successfully clicked at ({x}, {y})")
         return True
+    except StopAutomationException:
+        raise
+    except pyautogui.FailSafeException:
+        global STOP_REQUESTED
+        STOP_REQUESTED = True
+        raise StopAutomationException("Failsafe triggered.")
     except Exception as e:
         print(f"Error clicking at ({x}, {y}): {e}")
         return False
@@ -314,6 +357,7 @@ def human_click_image(image_path, confidence=0.8, click=True, move_duration=None
     Locate an image on screen, move mouse smoothly, and optionally click.
     Returns True if found and clicked, False otherwise.
     """
+    check_stop()
     try:
         location = pyautogui.locateCenterOnScreen(image_path, confidence=confidence)
         if location:
@@ -327,6 +371,12 @@ def human_click_image(image_path, confidence=0.8, click=True, move_duration=None
         else:
             print(f"Image not found: {image_path}")
             return False
+    except StopAutomationException:
+        raise
+    except pyautogui.FailSafeException:
+        global STOP_REQUESTED
+        STOP_REQUESTED = True
+        raise StopAutomationException("Failsafe triggered.")
     except Exception as e:
         print(f"Error with {image_path}: {e}")
         return False
@@ -350,6 +400,7 @@ def clean_special_characters(text):
 def clear_and_type(text, backspace_count=20):
     """Backspace to clear a field, then type the new text."""
     for _ in range(backspace_count):
+        check_stop()
         pyautogui.press('backspace')
         time.sleep(0.01)
     human_type(text)
@@ -475,10 +526,13 @@ def main(config, url, proxy=None):
     service_unavailable = False
     
     while time.time() - start_wait < 15:
+        check_stop()
         try:
             if pyautogui.locateOnScreen("service_unavailable.png", confidence=0.8):
                 service_unavailable = True
                 break
+        except StopAutomationException:
+            raise
         except Exception:
             pass
             
@@ -486,6 +540,8 @@ def main(config, url, proxy=None):
             # Check if we moved to the next page successfully
             if pyautogui.locateOnScreen("firstname_field.png", confidence=0.8):
                 break
+        except StopAutomationException:
+            raise
         except Exception:
             pass
             
@@ -708,10 +764,13 @@ def main(config, url, proxy=None):
     unable_to_verify_found = False
     
     while time.time() - start_time < 30:
+        check_stop()
         try:
             if pyautogui.locateOnScreen("success.png", confidence=0.8):
                 success_found = True
                 break
+        except StopAutomationException:
+            raise
         except Exception:
             pass
             
@@ -719,6 +778,8 @@ def main(config, url, proxy=None):
             if pyautogui.locateOnScreen("we_found_another_account.png", confidence=0.8):
                 another_account_found = True
                 break
+        except StopAutomationException:
+            raise
         except Exception:
             pass
 
@@ -726,6 +787,8 @@ def main(config, url, proxy=None):
             if pyautogui.locateOnScreen("we_couldnt_verify_your_data1.png", confidence=0.8):
                 unable_to_verify_found = True
                 break
+        except StopAutomationException:
+            raise
         except Exception:
             pass
             

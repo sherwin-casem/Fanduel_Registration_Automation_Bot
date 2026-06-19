@@ -16,26 +16,41 @@ class ToolTip:
         self.widget = widget
         self.text = text
         self.tw = None
+        self.id = None
         self.widget.bind("<Enter>", self.enter, add="+")
         self.widget.bind("<Leave>", self.leave, add="+")
+        self.widget.bind("<ButtonPress>", self.leave, add="+")
 
     def enter(self, event=None):
-        x = y = 0
-        try:
-            x, y, cx, cy = self.widget.bbox("insert")
-        except:
-            pass
-        x += self.widget.winfo_rootx() + 25
-        y += self.widget.winfo_rooty() + 20
+        self.unschedule()
+        self.id = self.widget.after(500, self.show)
+
+    def leave(self, event=None):
+        self.unschedule()
+        self.hide()
+
+    def unschedule(self):
+        id_ = self.id
+        self.id = None
+        if id_:
+            self.widget.after_cancel(id_)
+
+    def show(self):
+        if not self.text:
+            return
+        self.hide()
+        x = self.widget.winfo_rootx() + 15
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
         self.tw = tk.Toplevel(self.widget)
         self.tw.wm_overrideredirect(True)
+        self.tw.attributes("-topmost", True)
         self.tw.wm_geometry("+%d+%d" % (x, y))
         label = tk.Label(self.tw, text=self.text, justify='left',
                          background='#ffffe0', relief='solid', borderwidth=1,
                          font=("Segoe UI", 9, "normal"), padx=5, pady=3)
         label.pack(ipadx=1)
 
-    def leave(self, event=None):
+    def hide(self):
         if self.tw:
             self.tw.destroy()
             self.tw = None
@@ -170,20 +185,25 @@ class AutoUI:
         }
         
         self.notebook_tooltip = ToolTip(self.notebook, "")
+        self.current_tab_index = -1
         def on_notebook_motion(event):
             try:
                 index = self.notebook.index(f"@{event.x},{event.y}")
                 if index in tab_tooltips:
-                    self.notebook_tooltip.text = tab_tooltips[index]
-                    if not self.notebook_tooltip.tw:
+                    if self.current_tab_index != index:
+                        self.current_tab_index = index
+                        self.notebook_tooltip.text = tab_tooltips[index]
                         self.notebook_tooltip.enter()
                 else:
+                    self.current_tab_index = -1
                     self.notebook_tooltip.leave()
             except tk.TclError:
+                self.current_tab_index = -1
                 self.notebook_tooltip.leave()
                 
         self.notebook.bind("<Motion>", on_notebook_motion)
         self.notebook.bind("<Leave>", lambda e: self.notebook_tooltip.leave())
+        self.notebook.bind("<ButtonPress>", lambda e: self.notebook_tooltip.leave())
         
         # --- TREEVIEWS ---
         columns_pending = ("ID", "Email", "Username", "Status")
@@ -863,6 +883,7 @@ class AutoUI:
     def stop_automation(self):
         if self.is_running:
             self.stop_requested = True
+            automate2.STOP_REQUESTED = True
             self.status_lbl.config(text="🛑 Stopping... Killing browser...", fg="#dc3545")
             
             # Kill the browser using automate2's helper function
@@ -903,6 +924,7 @@ class AutoUI:
             
         self.is_running = True
         self.stop_requested = False
+        automate2.STOP_REQUESTED = False
         self.stop_btn.config(state=tk.NORMAL, bg="#dc3545", cursor="hand2")
         self.warning_lbl.config(text="⚠️ DO NOT TOUCH MOUSE/KEYBOARD!")
         
