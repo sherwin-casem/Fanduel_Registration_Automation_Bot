@@ -1,4 +1,4 @@
-import tkinter as tk
+﻿import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import json
 import os
@@ -10,6 +10,20 @@ import csv
 import openpyxl
 from openpyxl.styles import Font
 import automate2  # Imports your existing automation script
+from fundrel_automation.core.accounts import load_accounts as load_accounts_file
+from fundrel_automation.core.accounts import prepare_account_config
+from fundrel_automation.core.accounts import save_accounts as save_accounts_file
+from fundrel_automation.core.config import load_settings, parse_proxies, parse_referrals, save_settings
+from fundrel_automation.core.logging_config import get_logger
+from fundrel_automation.core.paths import ACCOUNTS_PATH, workspace_path
+from fundrel_automation.core.results import (
+    apply_outcome_to_account,
+    outcome_from_exception,
+    outcome_from_result,
+)
+from fundrel_automation.core.status import TAB_STATUS_MAP, classify_account, reset_to_pending
+
+logger = get_logger(__name__)
 
 class ToolTip:
     def __init__(self, widget, text):
@@ -58,10 +72,7 @@ class ToolTip:
 def add_tooltip(widget, text):
     ToolTip(widget, text)
 
-# Ensure we are in the correct directory so images and config load properly
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-os.chdir(BASE_DIR)
-ACCOUNTS_FILE = os.path.join(BASE_DIR, "accounts.json")
+ACCOUNTS_FILE = ACCOUNTS_PATH
 
 class AutoUI:
     def __init__(self, root):
@@ -91,18 +102,17 @@ class AutoUI:
         self.refresh_lists()
 
     def load_accounts(self):
-        if os.path.exists(ACCOUNTS_FILE):
-            try:
-                with open(ACCOUNTS_FILE, "r") as f:
-                    self.accounts = json.load(f)
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to load accounts: {e}")
-        else:
+        try:
+            self.accounts = load_accounts_file(ACCOUNTS_FILE)
+        except FileNotFoundError:
             self.accounts = []
+        except Exception as e:
+            self.accounts = []
+            logger.exception("Failed to load accounts")
+            messagebox.showerror("Action needed", f"Failed to load accounts: {e}")
 
     def save_accounts(self):
-        with open(ACCOUNTS_FILE, "w") as f:
-            json.dump(self.accounts, f, indent=4)
+        save_accounts_file(self.accounts, ACCOUNTS_FILE)
 
     def build_ui(self):
         # --- HEADER ---
@@ -128,18 +138,18 @@ class AutoUI:
                 add_tooltip(btn, tooltip_text)
             return btn
 
-        create_btn(toolbar, "📁 Upload JSON", self.upload_json, "#e2e8f0", tooltip_text="Load accounts from a .json file").pack(side=tk.LEFT, padx=5)
-        create_btn(toolbar, "📁 Upload Excel", self.upload_excel, "#e2e8f0", tooltip_text="Load accounts from a .xlsx or .xls file").pack(side=tk.LEFT, padx=5)
-        create_btn(toolbar, "➕ Add Account", self.add_account, "#e2e8f0", tooltip_text="Manually enter a single account's details").pack(side=tk.LEFT, padx=5)
-        create_btn(toolbar, "⚙ Settings", self.open_settings, "#ffc107", tooltip_text="Configure proxies, referrals, and Edge browser path").pack(side=tk.LEFT, padx=5)
+        create_btn(toolbar, "Upload JSON", self.upload_json, "#e2e8f0", tooltip_text="Load accounts from a .json file").pack(side=tk.LEFT, padx=5)
+        create_btn(toolbar, "Upload Excel", self.upload_excel, "#e2e8f0", tooltip_text="Load accounts from a .xlsx or .xls file").pack(side=tk.LEFT, padx=5)
+        create_btn(toolbar, "Add Account", self.add_account, "#e2e8f0", tooltip_text="Manually enter a single account's details").pack(side=tk.LEFT, padx=5)
+        create_btn(toolbar, "Settings", self.open_settings, "#ffc107", tooltip_text="Configure proxies, referrals, and Edge browser path").pack(side=tk.LEFT, padx=5)
         
         separator = tk.Frame(toolbar, width=2, bg="#cbd5e1")
         separator.pack(side=tk.LEFT, fill=tk.Y, padx=15, pady=2)
         
-        create_btn(toolbar, "▶ Run Pending", self.run_pending, "#28a745", "white", tooltip_text="Start automating all accounts in the Pending tab").pack(side=tk.LEFT, padx=5)
-        create_btn(toolbar, "▶ Run Selected", self.run_selected, "#17a2b8", "white", tooltip_text="Start automating ONLY the accounts you have highlighted in the Pending tab").pack(side=tk.LEFT, padx=5)
+        create_btn(toolbar, "Run Pending", self.run_pending, "#28a745", "white", tooltip_text="Start automating all accounts in the Pending tab").pack(side=tk.LEFT, padx=5)
+        create_btn(toolbar, "Run Selected", self.run_selected, "#17a2b8", "white", tooltip_text="Start automating ONLY the accounts you have highlighted in the Pending tab").pack(side=tk.LEFT, padx=5)
         
-        self.stop_btn = create_btn(toolbar, "🛑 STOP EVERYTHING", self.stop_automation, "#dc3545", "white", tooltip_text="EMERGENCY BRAKE: Stop the bot immediately and close the browser")
+        self.stop_btn = create_btn(toolbar, "STOP EVERYTHING", self.stop_automation, "#dc3545", "white", tooltip_text="EMERGENCY BRAKE: Stop the bot immediately and close the browser")
         self.stop_btn.config(state=tk.DISABLED)
         self.stop_btn.pack(side=tk.RIGHT, padx=10)
         
@@ -147,7 +157,7 @@ class AutoUI:
         status_frame = tk.Frame(toolbar, bg="#ffffff")
         status_frame.pack(side=tk.RIGHT, padx=20)
         
-        self.status_lbl = tk.Label(status_frame, text="🟢 Idle", fg="#28a745", font=("Segoe UI", 11, "bold"), bg="#ffffff")
+        self.status_lbl = tk.Label(status_frame, text="Idle", fg="#28a745", font=("Segoe UI", 11, "bold"), bg="#ffffff")
         self.status_lbl.pack(side=tk.TOP, anchor=tk.E)
         
         self.warning_lbl = tk.Label(status_frame, text="", fg="#dc3545", font=("Segoe UI", 9, "bold"), bg="#ffffff")
@@ -165,13 +175,13 @@ class AutoUI:
         self.tab_service_unavailable = ttk.Frame(self.notebook)
         self.tab_unable_to_verify = ttk.Frame(self.notebook)
         
-        self.notebook.add(self.tab_pending, text="  ⏳ Pending  ")
-        self.notebook.add(self.tab_created, text="  🌟 Created  ")
-        self.notebook.add(self.tab_failed, text="  ❌ Failed  ")
-        self.notebook.add(self.tab_skipped, text="  ⏭ Skipped  ")
-        self.notebook.add(self.tab_another_account, text="  👥 Another Account  ")
-        self.notebook.add(self.tab_service_unavailable, text="  ⚠️ Service Unavailable  ")
-        self.notebook.add(self.tab_unable_to_verify, text="  ❓ Unable to Verify  ")
+        self.notebook.add(self.tab_pending, text="  Pending  ")
+        self.notebook.add(self.tab_created, text="  Created  ")
+        self.notebook.add(self.tab_failed, text="  Failed  ")
+        self.notebook.add(self.tab_skipped, text="  Skipped  ")
+        self.notebook.add(self.tab_another_account, text="  Another Account  ")
+        self.notebook.add(self.tab_service_unavailable, text="  Service Unavailable  ")
+        self.notebook.add(self.tab_unable_to_verify, text="  Unable to Verify  ")
         
         # Tooltips for notebook tabs
         tab_tooltips = {
@@ -262,7 +272,7 @@ class AutoUI:
         add_tooltip(btn_excel, "Download the current list of accounts as an Excel (.xlsx) file")
         
         if tab_name not in ["pending", "created"]:
-            btn_mark = tk.Button(control_bar, text="🔄 Mark All & Send to Pending", command=lambda t=tab_name: self.send_to_pending(t), 
+            btn_mark = tk.Button(control_bar, text="Mark All & Send to Pending", command=lambda t=tab_name: self.send_to_pending(t), 
                       bg="#ffc107", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=10)
             btn_mark.pack(side=tk.RIGHT, padx=5)
             add_tooltip(btn_mark, "Move all accounts in this tab back to the Pending tab so the bot can try them again")
@@ -301,7 +311,7 @@ class AutoUI:
         menu.add_command(label="🖼 View Screenshot", command=lambda: self.view_screenshot(tree))
         if tab_name not in ["pending", "created"]:
             menu.add_separator()
-            menu.add_command(label="🔄 Send to Pending", command=lambda t=tab_name, tr=tree: self.send_selected_to_pending(t, tr))
+            menu.add_command(label="Send to Pending", command=lambda t=tab_name, tr=tree: self.send_selected_to_pending(t, tr))
         
         def show_menu(event):
             item = tree.identify_row(event.y)
@@ -347,21 +357,8 @@ class AutoUI:
         
         # Now populate the trees
         for idx, acc in enumerate(self.accounts):
-            status = "Pending"
+            status = classify_account(acc)
             timestamp = acc.get("timestamp", "-")
-            if acc.get("skipped"):
-                status = "Skipped"
-            elif acc.get("unable_to_verify"):
-                status = "Unable to Verify"
-            elif acc.get("we_found_another_account"):
-                status = "Another Account"
-            elif acc.get("service_not_available"):
-                status = "Service Unavailable"
-            elif acc.get("ran"):
-                if acc.get("created"):
-                    status = "Created"
-                else:
-                    status = "Failed"
                 
             tag = 'evenrow' if idx % 2 == 0 else 'oddrow'
             
@@ -383,32 +380,9 @@ class AutoUI:
     def get_accounts_for_tab(self, tab_name):
         accs = []
         for idx, acc in enumerate(self.accounts):
-            status = "Pending"
-            if acc.get("skipped"):
-                status = "Skipped"
-            elif acc.get("unable_to_verify"):
-                status = "Unable to Verify"
-            elif acc.get("we_found_another_account"):
-                status = "Another Account"
-            elif acc.get("service_not_available"):
-                status = "Service Unavailable"
-            elif acc.get("ran"):
-                if acc.get("created"):
-                    status = "Created"
-                else:
-                    status = "Failed"
+            status = classify_account(acc)
             
-            tab_status_map = {
-                "pending": "Pending",
-                "created": "Created",
-                "failed": "Failed",
-                "skipped": "Skipped",
-                "another_account": "Another Account",
-                "service_unavailable": "Service Unavailable",
-                "unable_to_verify": "Unable to Verify"
-            }
-            
-            if status == tab_status_map[tab_name]:
+            if status == TAB_STATUS_MAP[tab_name]:
                 acc_copy = acc.copy()
                 acc_copy["id"] = idx
                 accs.append(acc_copy)
@@ -455,7 +429,7 @@ class AutoUI:
             accounts = filtered
         
         if not accounts:
-            messagebox.showinfo("Info", "No data to export.")
+            messagebox.showinfo("Notice", "No data to export.")
             return
         
         filetypes = {
@@ -508,64 +482,45 @@ class AutoUI:
                 
                 wb.save(file_path)
             
-            messagebox.showinfo("Success", f"Data exported successfully to {file_path}")
+            messagebox.showinfo("Done", f"Data exported successfully to {file_path}")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to export data: {e}")
+            logger.exception("Failed to export %s data", tab_name)
+            messagebox.showerror("Action needed", f"Failed to export data: {e}")
     
     def send_to_pending(self, tab_name):
-        if not messagebox.askyesno("Confirm", "Mark all accounts in this tab as pending and reset?"):
+        if not messagebox.askyesno("Confirm action", "Mark all accounts in this tab as pending and reset?"):
             return
         
         accounts = self.get_accounts_for_tab(tab_name)
         for acc_copy in accounts:
             idx = acc_copy["id"]
-            acc = self.accounts[idx]
-            acc["ran"] = False
-            acc["success"] = False
-            acc["created"] = False
-            acc["skipped"] = False
-            acc["we_found_another_account"] = False
-            acc["service_not_available"] = False
-            acc["unable_to_verify"] = False
-            acc["reason"] = ""
-            acc.pop("screenshot", None)
-            acc.pop("timestamp", None)
+            reset_to_pending(self.accounts[idx])
         
         self.save_accounts()
         self.refresh_lists()
-        messagebox.showinfo("Success", "All accounts sent to Pending.")
+        messagebox.showinfo("Done", "All accounts sent to Pending.")
     
     def send_selected_to_pending(self, tab_name, tree):
         indices = self.get_selected_indices(tree)
         if not indices:
             return
         
-        if not messagebox.askyesno("Confirm", f"Mark {len(indices)} account(s) as pending and reset?"):
+        if not messagebox.askyesno("Confirm action", f"Mark {len(indices)} account(s) as pending and reset?"):
             return
         
         for idx in indices:
-            acc = self.accounts[idx]
-            acc["ran"] = False
-            acc["success"] = False
-            acc["created"] = False
-            acc["skipped"] = False
-            acc["we_found_another_account"] = False
-            acc["service_not_available"] = False
-            acc["unable_to_verify"] = False
-            acc["reason"] = ""
-            acc.pop("screenshot", None)
-            acc.pop("timestamp", None)
+            reset_to_pending(self.accounts[idx])
         
         self.save_accounts()
         self.refresh_lists()
-        messagebox.showinfo("Success", "Selected accounts sent to Pending.")
+        messagebox.showinfo("Done", "Selected accounts sent to Pending.")
 
     def open_settings(self):
         dialog = tk.Toplevel(self.root)
         dialog.title("Configuration Settings")
         dialog.geometry("800x600")
         
-        settings = automate2.load_settings()
+        settings = load_settings()
         
         notebook = ttk.Notebook(dialog)
         notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -614,83 +569,20 @@ class AutoUI:
         tk.Label(tab_proxies, text="Enter Proxies: Wrap in quotes. When appending, ALWAYS add a comma after the previous one:\n\"old:proxy:1:1\", \"new:proxy:2:2\"").pack(pady=5)
         
         def save_settings_ui():
-            # Process Referrals
             ref_raw = ref_text.get("1.0", tk.END).strip()
-            referrals = []
-            if ref_raw:
-                try:
-                    # Try to parse as valid JSON first
-                    parsed_ref = json.loads(ref_raw)
-                    if isinstance(parsed_ref, list):
-                        for item in parsed_ref:
-                            if isinstance(item, dict):
-                                referrals.append(item)
-                            elif isinstance(item, str):
-                                referrals.append({"url": item, "enabled": True, "percentage": 100})
-                    else:
-                        raise ValueError("Referrals JSON must be a list.")
-                except Exception as e:
-                    if '{' in ref_raw:
-                        messagebox.showerror("Error", f"Referrals format is invalid. If mixing JSON and plain text, ensure it's a valid JSON array.\nError: {e}")
-                        return
-                    # Fallback to simple format parsing (e.g., "url1", "url2" or one URL per line)
-                    import re
-                    clean_ref = ref_raw.strip("[]")
-                    items = re.split(r'[\n,]+', clean_ref)
-                    for item in items:
-                        item = item.strip().strip("'\"")
-                        if item:
-                            referrals.append({"url": item, "enabled": True, "percentage": 100})
-            
-            # Process Proxies
             proxy_raw = proxy_text.get("1.0", tk.END).strip()
-            proxies = []
-            if proxy_raw:
-                try:
-                    # Try to parse as valid JSON first
-                    parsed_proxy = json.loads(proxy_raw)
-                    if isinstance(parsed_proxy, list):
-                        for item in parsed_proxy:
-                            if isinstance(item, dict):
-                                proxies.append(item)
-                            elif isinstance(item, str):
-                                parts = item.split(':', 3)
-                                if len(parts) >= 4:
-                                    proxies.append({
-                                        "host": parts[0].strip(),
-                                        "port": parts[1].strip(),
-                                        "user": parts[2].strip(),
-                                        "pass": parts[3].strip(),
-                                        "last_use": 0
-                                    })
-                                else:
-                                    raise ValueError(f"Invalid proxy format: {item}")
-                    else:
-                        raise ValueError("Proxies JSON must be a list.")
-                except Exception as e:
-                    if '{' in proxy_raw:
-                        messagebox.showerror("Error", f"Proxies format is invalid. If mixing JSON and plain text, ensure it's a valid JSON array.\nError: {e}")
-                        return
-                    # Fallback to host:port:user:pass parsing
-                    lines = proxy_raw.split('\n')
-                    for line in lines:
-                        # For proxies separated by commas on the same line, handle them too
-                        sub_items = line.split(',')
-                        for sub_item in sub_items:
-                            sub_item = sub_item.strip().strip("[],'\"")
-                            if not sub_item: continue
-                            parts = sub_item.split(':', 3)
-                            if len(parts) >= 4:
-                                proxies.append({
-                                    "host": parts[0].strip(),
-                                    "port": parts[1].strip(),
-                                    "user": parts[2].strip(),
-                                    "pass": parts[3].strip(),
-                                    "last_use": 0
-                                })
-                            else:
-                                messagebox.showerror("Error", f"Invalid proxy format:\n{sub_item}\nExpected host:port:user:pass")
-                                return
+
+            try:
+                referrals = parse_referrals(ref_raw)
+            except ValueError as e:
+                messagebox.showerror("Action needed", str(e))
+                return
+
+            try:
+                proxies = parse_proxies(proxy_raw)
+            except ValueError as e:
+                messagebox.showerror("Action needed", str(e))
+                return
                 
             settings["referrals"] = referrals
             settings["proxies"] = proxies
@@ -701,8 +593,8 @@ class AutoUI:
             if "urls" in settings:
                 del settings["urls"]
             
-            automate2.save_settings(settings)
-            messagebox.showinfo("Success", "Settings saved successfully.")
+            save_settings(settings)
+            messagebox.showinfo("Done", "Settings saved successfully.")
             dialog.destroy()
             
         tk.Button(dialog, text="Save Settings", command=save_settings_ui, bg="#28a745", fg="white", font=("Segoe UI", 10, "bold")).pack(pady=10)
@@ -719,11 +611,12 @@ class AutoUI:
                         self.accounts.extend(new_accs)
                         self.save_accounts()
                         self.refresh_lists()
-                        messagebox.showinfo("Success", f"Appended {len(new_accs)} accounts.")
+                        messagebox.showinfo("Done", f"Appended {len(new_accs)} accounts.")
                     else:
-                        messagebox.showerror("Error", "JSON must contain a list of accounts.")
+                        messagebox.showerror("Action needed", "JSON must contain a list of accounts.")
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to read file: {e}")
+                logger.exception("Failed to read account JSON")
+                messagebox.showerror("Action needed", f"Failed to read file: {e}")
 
     def upload_excel(self):
         file_path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx;*.xls")])
@@ -737,7 +630,7 @@ class AutoUI:
                     headers.append(str(cell.value).strip() if cell.value else "")
                 
                 if not headers or not any(headers):
-                    messagebox.showerror("Error", "No headers found in the first row of the Excel file.")
+                    messagebox.showerror("Action needed", "No headers found in the first row of the Excel file.")
                     return
                 
                 new_accs = []
@@ -783,11 +676,12 @@ class AutoUI:
                     self.accounts.extend(new_accs)
                     self.save_accounts()
                     self.refresh_lists()
-                    messagebox.showinfo("Success", f"Appended {len(new_accs)} accounts from Excel.")
+                    messagebox.showinfo("Done", f"Appended {len(new_accs)} accounts from Excel.")
                 else:
-                    messagebox.showinfo("Info", "No valid data found in the Excel file.")
+                    messagebox.showinfo("Notice", "No valid data found in the Excel file.")
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to read Excel file: {e}")
+                logger.exception("Failed to read account Excel file")
+                messagebox.showerror("Action needed", f"Failed to read Excel file: {e}")
 
     def get_selected_indices(self, tree):
         selected = tree.selection()
@@ -796,7 +690,7 @@ class AutoUI:
     def delete_account(self, tree):
         indices = self.get_selected_indices(tree)
         if not indices: return
-        if messagebox.askyesno("Confirm", f"Delete {len(indices)} account(s)?"):
+        if messagebox.askyesno("Confirm action", f"Delete {len(indices)} account(s)?"):
             # Delete in reverse order to keep indices intact during deletion
             for idx in sorted(indices, reverse=True):
                 del self.accounts[idx]
@@ -863,12 +757,13 @@ class AutoUI:
         if not indices: return
         acc = self.accounts[indices[0]]
         path = acc.get("screenshot")
+        screenshot_path = workspace_path(path) if path else None
         
-        if path and os.path.exists(path):
+        if screenshot_path and screenshot_path.exists():
             top = tk.Toplevel(self.root)
             top.title(f"Screenshot - {acc.get('email')}")
             try:
-                img = Image.open(path)
+                img = Image.open(screenshot_path)
                 # Resize to fit screen reasonably
                 img.thumbnail((900, 700))
                 photo = ImageTk.PhotoImage(img)
@@ -876,16 +771,16 @@ class AutoUI:
                 lbl.image = photo
                 lbl.pack()
             except Exception as e:
-                messagebox.showerror("Error", f"Cannot load image: {e}")
+                messagebox.showerror("Action needed", f"Cannot load image: {e}")
         else:
-            messagebox.showinfo("Not Found", "No screenshot available for this account.")
+            messagebox.showinfo("Screenshot not found", "No screenshot available for this account.")
 
     def stop_automation(self):
         if self.is_running:
             self.stop_requested = True
             # Set the stop flag in automate2
             automate2.set_stop_requested(True)
-            self.status_lbl.config(text="🛑 Stopping... Killing browser...", fg="#dc3545")
+            self.status_lbl.config(text="Stopping... Closing browser...", fg="#dc3545")
             
             # Kill the browser using automate2's helper function
             automate2.kill_browser()
@@ -908,7 +803,7 @@ class AutoUI:
         if indices:
             self.start_runner(indices)
         else:
-            messagebox.showinfo("Info", "Select accounts from the Pending tab (Ctrl+Click to select multiple).")
+            messagebox.showinfo("Notice", "Select accounts from the Pending tab (Ctrl+Click to select multiple).")
 
     def run_single(self, tree):
         indices = self.get_selected_indices(tree)
@@ -917,10 +812,10 @@ class AutoUI:
 
     def start_runner(self, indices):
         if self.is_running:
-            messagebox.showwarning("Warning", "Automation is already running!")
+            messagebox.showwarning("Please wait", "Automation is already running!")
             return
         if not indices:
-            messagebox.showinfo("Info", "No accounts to run.")
+            messagebox.showinfo("Notice", "No accounts to run.")
             return
             
         self.is_running = True
@@ -928,10 +823,11 @@ class AutoUI:
         # Reset the stop flag in automate2
         automate2.set_stop_requested(False)
         self.stop_btn.config(state=tk.NORMAL, bg="#dc3545", cursor="hand2")
-        self.warning_lbl.config(text="⚠️ DO NOT TOUCH MOUSE/KEYBOARD!")
+        self.warning_lbl.config(text="Do not touch mouse or keyboard while automation is running.")
         
         # Run in background thread to keep UI responsive
         self.thread = threading.Thread(target=self.runner_thread, args=(indices,), daemon=True)
+        logger.info("Starting automation runner for %s account(s)", len(indices))
         self.thread.start()
 
     def runner_thread(self, indices):
@@ -943,10 +839,9 @@ class AutoUI:
             email = acc.get('email', 'Unknown')
             
             self.root.after(0, lambda e=email, c=i+1, t=len(indices): 
-                            self.status_lbl.config(text=f"🔄 Validating: {e} ({c}/{t})", fg="#0056b3"))
+                            self.status_lbl.config(text=f"Validating: {e} ({c}/{t})", fg="#0056b3"))
             
-            current_config = automate2.DEFAULT_CONFIG.copy()
-            current_config.update(acc)
+            current_config = prepare_account_config(acc, automate2.DEFAULT_CONFIG)
             
             is_valid, val_reason = automate2.validate_account(current_config)
             if not is_valid:
@@ -959,7 +854,7 @@ class AutoUI:
                 self.root.after(0, self.refresh_lists)
                 continue
                 
-            settings = automate2.load_settings()
+            settings = load_settings()
             url, proxy, wait_time = automate2.get_next_url_and_proxy(settings, current_config)
             
             if wait_time > 0:
@@ -968,77 +863,38 @@ class AutoUI:
                         break
                     mins, secs = divmod(remaining, 60)
                     time_str = f"{mins:02d}:{secs:02d}"
-                    self.root.after(0, lambda t=time_str: self.status_lbl.config(text=f"⏳ Proxy Cooldown: {t}", fg="#f39c12"))
+                    self.root.after(0, lambda t=time_str: self.status_lbl.config(text=f"Proxy cooldown: {t}", fg="#f39c12"))
                     time.sleep(1)
                     
             if self.stop_requested:
                 break
                 
             self.root.after(0, lambda e=email, c=i+1, t=len(indices): 
-                            self.status_lbl.config(text=f"🔄 Running: {e} ({c}/{t})", fg="#0056b3"))
-            
-            first_name = automate2.clean_special_characters(current_config.get("firstName", "first"))
-            last_name = automate2.clean_special_characters(current_config.get("lastName", "last"))
-            current_config["username"] = f"{last_name}{first_name}{automate2.random.randint(1000, 9999)}"
-            
-            # Check and update password if it's less than 8 characters
-            if len(current_config.get("password", "")) < 8:
-                new_password = f"{current_config.get('password', '')}{last_name}"
-                current_config["password"] = new_password
-                acc["password"] = new_password
+                            self.status_lbl.config(text=f"Running: {e} ({c}/{t})", fg="#0056b3"))
             
             try:
                 is_created, status = automate2.main(current_config, url, proxy)
-                success = True
-                created = bool(is_created)
-                
-                if status == "we_found_another_account":
-                    reason = "We found another account"
-                    screenshot_path = automate2.take_result_screenshot("we_found_another_account")
-                elif status == "service_not_available":
-                    reason = "Service not available"
-                    screenshot_path = automate2.take_result_screenshot("service_not_available")
-                elif status == "unable_to_verify":
-                    reason = "Unable to verify data"
-                    screenshot_path = automate2.take_result_screenshot("unable_to_verify")
-                elif status == "success_not_created":
-                    reason = "Finished without creating account (standard success fallback)."
-                    screenshot_path = automate2.take_result_screenshot("success")
-                else:
-                    reason = "Successfully completed."
-                    screenshot_path = automate2.take_result_screenshot("success")
+                outcome = outcome_from_result(is_created, status)
             except Exception as e:
                 if self.stop_requested:
-                    self.root.after(0, lambda: self.status_lbl.config(text="🛑 Stopped by User", fg="#dc3545"))
+                    self.root.after(0, lambda: self.status_lbl.config(text="Stopped by user", fg="#dc3545"))
                     break
                     
-                success = False
-                created = False
-                reason = str(e)
-                screenshot_path = automate2.take_result_screenshot("error")
+                outcome = outcome_from_exception(e)
+                logger.exception("Automation failed for %s", email)
                 
-            # import datetime
+            screenshot_path = automate2.take_result_screenshot(outcome.screenshot_prefix)
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
-            # Update Account State
-            acc["ran"] = True
-            acc["success"] = success
-            acc["created"] = created
-            if "Account already exist" in reason:
-                acc["skipped"] = True
-                acc["success"] = False # Ensure it's not marked as success
-            else:
-                acc["skipped"] = False
-                
-            acc["we_found_another_account"] = ("We found another account" in reason)
-            acc["service_not_available"] = ("Service not available" in reason)
-            acc["unable_to_verify"] = ("Unable to verify" in reason)
-            acc["reason"] = reason
-            acc["screenshot"] = screenshot_path
-            acc["username"] = current_config["username"] # Save generated username
-            acc["timestamp"] = timestamp
+            apply_outcome_to_account(
+                acc,
+                outcome,
+                screenshot_path,
+                username=current_config["username"],
+                timestamp=timestamp,
+            )
             
             self.save_accounts()
+            logger.info("Account finished: email=%s success=%s created=%s reason=%s", email, outcome.success, outcome.created, outcome.reason)
             self.root.after(0, self.refresh_lists)
             
             # Close browser
@@ -1046,10 +902,10 @@ class AutoUI:
             
             # Wait period between accounts
             if i < len(indices) - 1 and not self.stop_requested:
-                settings = automate2.load_settings()
+                settings = load_settings()
                 proxies = settings.get("proxies", [])
                 if len(proxies) <= 1:
-                    wait_time_minutes = 10 if success else 11
+                    wait_time_minutes = 10 if outcome.success else 11
                     total_seconds = wait_time_minutes * 60
                 else:
                     total_seconds = 120 # Minimum 2 minutes buffer when multiple proxies exist
@@ -1061,7 +917,7 @@ class AutoUI:
                     
                     mins, secs = divmod(remaining, 60)
                     time_str = f"{mins:02d}:{secs:02d}"
-                    self.root.after(0, lambda t=time_str: self.status_lbl.config(text=f"⏳ Waiting for next account: {t}", fg="#f39c12"))
+                    self.root.after(0, lambda t=time_str: self.status_lbl.config(text=f"Waiting for next account: {t}", fg="#f39c12"))
                     time.sleep(1)
 
         # Cleanup after loop finishes or stops
@@ -1069,7 +925,8 @@ class AutoUI:
         self.stop_requested = False
         self.root.after(0, lambda: self.stop_btn.config(state=tk.DISABLED, bg="#e2e8f0", cursor="arrow"))
         self.root.after(0, lambda: self.warning_lbl.config(text=""))
-        self.root.after(0, lambda: self.status_lbl.config(text="🟢 Idle", fg="#28a745"))
+        self.root.after(0, lambda: self.status_lbl.config(text="Idle", fg="#28a745"))
+        logger.info("Automation queue finished")
         self.root.after(0, lambda: messagebox.showinfo("Done", "Automation queue finished."))
 
 if __name__ == "__main__":

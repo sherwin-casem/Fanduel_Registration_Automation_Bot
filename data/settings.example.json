@@ -1,0 +1,25 @@
+{
+    "edge_path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+    "referrals": [
+        {
+            "url": "https://example.com/referral",
+            "enabled": true,
+            "percentage": 100
+        }
+    ],
+    "referral_mode": "rotate",
+    "referral_state": {
+        "index": 0,
+        "start_time": 0,
+        "random_bag": []
+    },
+    "proxies": [
+        {
+            "host": "proxy.example.com",
+            "port": "10001",
+            "user": "proxy-user",
+            "pass": "proxy-password",
+            "last_use": 0
+        }
+    ]
+}

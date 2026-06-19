@@ -3,6 +3,14 @@ import subprocess
 import time
 import os
 import random
+
+from fundrel_automation.core.env import load_env
+
+ENV = load_env()
+
+
+def env_value(name, default=""):
+    return os.getenv(name) or ENV.get(name, default)
 # NOTE: Ensure you have installed opencv for the confidence parameter to work:
 # pip install opencv-python
 
@@ -49,12 +57,10 @@ def human_click_image(image_path, confidence_level=0.8):
 
 def open_with_proxy(browser="chrome"):
     # The login page you want to open
-    url = "https://fndl.co/ohhanft" 
+    url = env_value("FUNDREL_DEMO_URL", "https://example.com")
     
     # Proxy details
-    proxy_server = "http://gate.decodo.com:10001"
-    proxy_user = "user-sph94wqr63-country-ca-city-toronto"
-    proxy_pass = "7t+zeL4Fkw1oCaxjP6"
+    proxy_server = env_value("FUNDREL_PROXY_SERVER", "http://proxy.example.com:10001")
 
     # Determine browser executable path (Default Windows paths)
     if browser == "chrome":
@@ -89,7 +95,7 @@ def open_with_proxy(browser="chrome"):
     
     # Step 1: Click the email input field and type the email
     if human_click_image('email.png'):
-        human_type('asiyemiea01@gmail.com')  
+        human_type(env_value("FUNDREL_DEMO_EMAIL", "person@example.com"))
         
         time.sleep(random.uniform(1.0, 2.0))
         human_click_image('next.png')
@@ -98,7 +104,7 @@ def open_with_proxy(browser="chrome"):
         time.sleep(4)
         
         if human_click_image('password.png'):
-            human_type('08021116394') 
+            human_type(env_value("FUNDREL_DEMO_PASSWORD", "example-password"))
             
             time.sleep(random.uniform(0.5, 1.0))
             human_click_image('next.png')

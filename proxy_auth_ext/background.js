@@ -4,7 +4,7 @@
         rules: {
             singleProxy: {
                 scheme: "http",
-                host: "gate.decodo.com",
+                host: "proxy.example.com",
                 port: parseInt(10001)
             },
             bypassList: ["localhost"]
@@ -17,8 +17,8 @@
         function(details) {
             return {
                 authCredentials: {
-                    username: "user-sph94wqr63-country-ca-city-toronto",
-                    password: "7t+zeL4Fkw1oCaxjP6"
+                    username: "proxy-user",
+                    password: "proxy-password"
                 }
             };
         },

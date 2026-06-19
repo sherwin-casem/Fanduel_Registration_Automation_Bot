@@ -1,0 +1,2 @@
+"""Fundrel automation application package."""
+

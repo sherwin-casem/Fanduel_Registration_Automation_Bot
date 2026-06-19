@@ -1,0 +1,21 @@
+[
+    {
+        "email": "person@example.com",
+        "username": "",
+        "password": "example-password",
+        "firstName": "First",
+        "middleName": "",
+        "lastName": "Last",
+        "apt": "",
+        "month": "01",
+        "day": "01",
+        "year": "1990",
+        "phone": "5555555555",
+        "address": "123 Example Street",
+        "city": "Toronto",
+        "province": "ON",
+        "postcode": "A1A 1A1",
+        "referral_url": ""
+    }
+]
+

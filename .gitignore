@@ -1,2 +1,17 @@
 build/
 dist/
+__pycache__/
+*.py[cod]
+*.log
+.env
+.env.local
+.env.*.local
+.venv/
+venv/
+runtime/
+images_result/
+accounts.json
+settings.json
+data/accounts.json
+data/settings.json
+screenshot_*.png

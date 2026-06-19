@@ -2,11 +2,44 @@ import pyautogui
 import subprocess
 import time
 import os
-import json
 import random
-import re
 import string
 import datetime
+
+from fundrel_automation.core.accounts import (
+    clean_special_characters as clean_account_text,
+    load_accounts,
+    prepare_account_config,
+    save_accounts,
+    validate_account as validate_account_data,
+)
+from fundrel_automation.core.config import load_settings, save_settings
+from fundrel_automation.core.errors import AccountAlreadyExists, AutomationError, AutomationStopped
+from fundrel_automation.core.logging_config import get_logger
+from fundrel_automation.core.paths import ACCOUNTS_PATH, RESULTS_DIR, asset_path
+from fundrel_automation.core.results import (
+    RESULT_CREATED,
+    RESULT_SERVICE_NOT_AVAILABLE,
+    RESULT_SUCCESS_NOT_CREATED,
+    RESULT_UNABLE_TO_VERIFY,
+    RESULT_WE_FOUND_ANOTHER_ACCOUNT,
+    apply_outcome_to_account,
+    outcome_from_exception,
+    outcome_from_result,
+)
+from fundrel_automation.core.routing import select_url_and_proxy
+
+logger = get_logger(__name__)
+
+
+def log_message(*values, sep=" ", end="\n", **_kwargs):
+    message = sep.join(str(value) for value in values)
+    if end and end != "\n":
+        message += end
+    logger.info(message.rstrip("\n"))
+
+
+print = log_message
 
 # ------------------------------------------------------------
 # CONFIGURATION
@@ -21,197 +54,34 @@ def set_stop_requested(value):
 def check_stop():
     global STOP_REQUESTED
     if STOP_REQUESTED:
-        raise Exception("Automation stopped by user")
+        raise AutomationStopped()
 
 CONFIG_PATH = "config.json"
 DEFAULT_CONFIG = {
-    "email": "mari.annesoucy716+app@gmail.com",
-    "username": f"johnbenns{random.randint(100000, 999999)}",
-    "password": "Aaron0012",
-    "firstName": "john",
-    "middleName": "francis",
-    "lastName": "benns",
+    "email": "person@example.com",
+    "username": f"user{random.randint(100000, 999999)}",
+    "password": "example-password",
+    "firstName": "First",
+    "middleName": "",
+    "lastName": "Last",
     "apt": "",
-    "month": "11",
-    "day": "02",
-    "year": "1997",
-    "phone": "9053370212",
-    "address": "37 holmes dr",
-    "city": "calendon",
+    "month": "01",
+    "day": "01",
+    "year": "1990",
+    "phone": "5555555555",
+    "address": "123 Example Street",
+    "city": "Toronto",
     "province": "ON",
-    "postcode": "L7K 0A6"
+    "postcode": "A1A 1A1"
 }
-
-SETTINGS_PATH = "settings.json"
-DEFAULT_SETTINGS = {
-    "edge_path": r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-    "referrals": [
-        {
-            "url": "https://fndl.co/ohhanft",
-            "enabled": True,
-            "percentage": 100
-        }
-    ],
-    "referral_mode": "rotate",  # "rotate", "sequential_60m", "random_mix", "percentage_allocation"
-    "referral_state": {
-        "index": 0,
-        "start_time": 0,
-        "random_bag": []
-    },
-    "proxies": [
-        {
-            "host": "gate.decodo.com",
-            "port": "10001",
-            "user": "user-sph94wqr63-country-ca-city-toronto",
-            "pass": "7t+zeL4Fkw1oCaxjP6",
-            "last_use": 0
-        }
-    ]
-}
-
-def load_settings():
-    if not os.path.exists(SETTINGS_PATH):
-        with open(SETTINGS_PATH, "w") as f:
-            json.dump(DEFAULT_SETTINGS, f, indent=4)
-        return DEFAULT_SETTINGS
-    with open(SETTINGS_PATH, "r") as f:
-        settings = json.load(f)
-        
-        # Migrate old settings to new format
-        changed = False
-        if "urls" in settings and "referrals" not in settings:
-            settings["referrals"] = [{"url": u, "enabled": True, "percentage": 100} for u in settings["urls"]]
-            settings["referral_mode"] = "rotate"
-            settings["referral_state"] = {"index": 0, "start_time": 0, "random_bag": []}
-            changed = True
-            
-        if changed:
-            save_settings(settings)
-            
-        return settings
-
-def save_settings(settings):
-    with open(SETTINGS_PATH, "w") as f:
-        json.dump(settings, f, indent=4)
 
 def get_next_url_and_proxy(settings, account_config=None):
-    account_config = account_config or {}
-    referrals = settings.get("referrals", [])
-    enabled_referrals = [r for r in referrals if r.get("enabled", True)]
-    
-    mode = settings.get("referral_mode", "rotate")
-    state = settings.get("referral_state", {"index": 0, "start_time": 0, "random_bag": []})
-    
-    url = "https://fndl.co/ohhanft"  # fallback
-    
-    # 1. Check if account wants a specific referral
-    specific_url = account_config.get("referral_url")
-    if specific_url and specific_url.strip():
-        url = specific_url.strip()
-    elif enabled_referrals:
-        now = time.time()
-        
-        if mode == "rotate":
-            state["index"] = state.get("index", 0) % len(enabled_referrals)
-            url = enabled_referrals[state["index"]]["url"]
-            state["index"] = (state["index"] + 1) % len(enabled_referrals)
-            
-        elif mode == "sequential_60m":
-            start_time = state.get("start_time", 0)
-            if now - start_time >= 3600:
-                # 60 mins passed, move to next
-                state["index"] = (state.get("index", 0) + 1) % len(enabled_referrals)
-                state["start_time"] = now
-            elif start_time == 0:
-                state["start_time"] = now
-                
-            state["index"] = state.get("index", 0) % len(enabled_referrals)
-            url = enabled_referrals[state["index"]]["url"]
-            
-        elif mode == "random_mix":
-            bag = state.get("random_bag", [])
-            # Filter bag to only contain currently enabled referrals
-            enabled_urls = [r["url"] for r in enabled_referrals]
-            bag = [u for u in bag if u in enabled_urls]
-            
-            if not bag:
-                # Refill bag
-                bag = [r["url"] for r in enabled_referrals]
-                random.shuffle(bag)
-            
-            url = bag.pop(0)
-            state["random_bag"] = bag
-            
-        elif mode == "percentage_allocation":
-            # Probabilistically pick based on weights
-            weights = [r.get("percentage", 100) for r in enabled_referrals]
-            total_weight = sum(weights)
-            if total_weight <= 0:
-                url = random.choice(enabled_referrals)["url"]
-            else:
-                rand_val = random.uniform(0, total_weight)
-                cumulative = 0
-                for r, w in zip(enabled_referrals, weights):
-                    cumulative += w
-                    if rand_val <= cumulative:
-                        url = r["url"]
-                        break
-        else:
-            # Fallback
-            url = enabled_referrals[0]["url"]
-            
-    settings["referral_state"] = state
-        
-    proxies = settings.get("proxies", [])
-    if not proxies:
-        save_settings(settings)
-        return url, None, 0
-        
-    now = time.time()
-    cooldown = 600  # 10 minutes
-    
-    # Find the proxy that will be available the soonest
-    best_proxy = None
-    min_wait = float('inf')
-    
-    # First, try to find a proxy that has NEVER been used (last_use == 0)
-    unused_proxies = [p for p in proxies if p.get("last_use", 0) == 0]
-    
-    if unused_proxies:
-        best_proxy = unused_proxies[0]
-        min_wait = 0
-    else:
-        # If all proxies have been used at least once, find the one with the lowest wait time
-        for proxy in proxies:
-            last_use = proxy.get("last_use", 0)
-            wait_time = max(0, cooldown - (now - last_use))
-            
-            # If wait_time is 0, it means it's fully cooled down. Use it immediately.
-            if wait_time == 0:
-                best_proxy = proxy
-                min_wait = 0
-                break
-                
-            if wait_time < min_wait:
-                min_wait = wait_time
-                best_proxy = proxy
-            
-    # Mark it as used (projecting into the future if we have to wait)
-    best_proxy["last_use"] = now + min_wait
+    url, proxy, min_wait = select_url_and_proxy(settings, account_config)
     save_settings(settings)
-    
-    return url, best_proxy, min_wait
+    return url, proxy, min_wait
 
 def validate_account(config):
-    required_fields = ['email', 'password', 'firstName', 'lastName', 'month', 'day', 'year', 'address', 'city', 'province', 'postcode']
-    for field in required_fields:
-        if not config.get(field):
-            return False, f"Missing required field: {field}"
-            
-    # if not re.match(r'^[\w\.-]+@[\w\.-]+\.\w+$', config['email']):
-    if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', config['email']):
-        return False, f"Invalid email format: {config['email']}"
-    return True, "valid"
+    return validate_account_data(config)
 BROWSER_PROC =None
 def kill_browser():
     """Forcefully kills the browser process."""
@@ -271,6 +141,7 @@ def launch_chrome_with_proxy(url, proxy=None):
     time.sleep(5)  # wait for page to load
 
 def wait_for_image(image_path, timeout=15, confidence=0.8):
+    image_path = str(asset_path(image_path))
     start = time.time()
 
     while time.time() - start < timeout:
@@ -295,7 +166,8 @@ def random_screenshot_name(prefix="screenshot"):
 def take_screenshot():
     """Take a full-screen screenshot and return the filename."""
     check_stop()
-    filename = random_screenshot_name()
+    filename = str(RESULTS_DIR / random_screenshot_name())
+    os.makedirs(RESULTS_DIR, exist_ok=True)
     pyautogui.screenshot(filename)
     print(f"Screenshot saved: {filename}")
     return filename
@@ -333,6 +205,7 @@ def human_click_image(image_path, confidence=0.8, click=True, move_duration=None
     Returns True if found and clicked, False otherwise.
     """
     check_stop()
+    image_path = str(asset_path(image_path))
     try:
         location = pyautogui.locateCenterOnScreen(image_path, confidence=confidence)
         check_stop()
@@ -365,14 +238,7 @@ def random_delay(min_sec=8, max_sec=12):
         time.sleep(0.1)
 
 def clean_special_characters(text):
-    """
-    Remove special characters from text.
-    Keeps: letters (a-z, A-Z), numbers (0-9)
-    Removes: everything else (-, _, ., ,, +, =, @, #, $, %, ^, &, *, etc.)
-    """
-    # Using regex to keep only alphanumeric characters
-    cleaned = re.sub(r'[^a-zA-Z0-9]', '', text)
-    return cleaned.lower()  # Convert to lowercase for consistency
+    return clean_account_text(text)
 
 def clear_and_type(text, backspace_count=20):
     """Backspace to clear a field, then type the new text."""
@@ -387,6 +253,13 @@ def click_image_or_coord(image_path, x, y, confidence=0.8):
     """Try to click an image, if not found, fallback to coordinates."""
     if not human_click_image(image_path, confidence=confidence):
         human_click_coords(x, y)
+
+def image_on_screen(image_path, confidence=0.8):
+    """Return True when the named project image asset is visible on screen."""
+    try:
+        return pyautogui.locateOnScreen(str(asset_path(image_path)), confidence=confidence) is not None
+    except Exception:
+        return False
 
 # ------------------------------------------------------------
 # MAIN AUTOMATION FLOW (using image recognition)
@@ -433,7 +306,7 @@ def main(config, url, proxy=None):
         time.sleep(10)
     # 1. Click Ontario button (image: ontario_button.png)
     if not human_click_coords(659, 462):
-        raise Exception("Ontario button not found.")
+        raise AutomationError("Ontario button not found.")
     random_delay(4, 6)
     check_stop()
     time.sleep(25)
@@ -445,7 +318,7 @@ def main(config, url, proxy=None):
     
     if not human_click_image("email1.png"):
         if not human_click_coords(519, 386):
-            raise Exception("Email field not found - image and coordinates both failed.")
+            raise AutomationError("Email field not found - image and coordinates both failed.")
         time.sleep(3)
 
     # Type email (reached here means one of them worked)
@@ -458,7 +331,7 @@ def main(config, url, proxy=None):
 
     # 3. Continue button
     if not human_click_coords(666, 455):
-        raise Exception("Continue button not found.")
+        raise AutomationError("Continue button not found.")
     random_delay(5, 8)
     check_stop()
     time.sleep(5)
@@ -466,16 +339,10 @@ def main(config, url, proxy=None):
     # Check if login image appears, meaning account already exists
     print("Checking if account already exists...")
     check_stop()
-    try:
-        if pyautogui.locateOnScreen("login.png", confidence=0.8):
-            print("Login prompt appeared, account already exists.")
-            raise Exception("Account already exist")
-    except Exception as e:
-        if str(e) == "Account already exist":
-            raise e
-        # If the image is not found, pyautogui raises an exception in newer versions.
-        # We can safely ignore it, as it means the account doesn't exist yet.
-        print("Login image not found. Proceeding with registration...")
+    if image_on_screen("login.png", confidence=0.8):
+        print("Login prompt appeared, account already exists.")
+        raise AccountAlreadyExists()
+    print("Login image not found. Proceeding with registration...")
 
     # 4. Username field
     check_stop()
@@ -483,7 +350,7 @@ def main(config, url, proxy=None):
     # human_click_coords(597, 508)
     if not human_click_image("username1.png"):
         if not human_click_coords(597, 508):
-            raise Exception("Username field not found - image and coordinates both failed.")
+            raise AutomationError("Username field not found - image and coordinates both failed.")
         time.sleep(3)
 
     check_stop()
@@ -493,8 +360,6 @@ def main(config, url, proxy=None):
     check_stop()
     time.sleep(3)
         # take_screenshot()
-    # else:
-    #     raise Exception("Username field not found.")
 
     # 5. Password field
     check_stop()
@@ -505,7 +370,7 @@ def main(config, url, proxy=None):
         random_delay(6, 9)
         # take_screenshot()
     else:
-        raise Exception("Password field not found.")
+        raise AutomationError("Password field not found.")
     # --- SCROLL BEFORE CREATE ACCOUNT ---
     print("Scrolling to reveal Create Account button...")
     check_stop()
@@ -515,33 +380,27 @@ def main(config, url, proxy=None):
 
     # 6. Create Account button (submit)
     if not human_click_image("create_account.png"):
-        raise Exception("Create Account button not found.")
+        raise AutomationError("Create Account button not found.")
     
     print("Waiting to see if 'service not available' appears...")
     start_wait = time.time()
     service_unavailable = False
     
     while time.time() - start_wait < 15:
-        try:
-            if pyautogui.locateOnScreen("service_unavailable.png", confidence=0.8):
-                service_unavailable = True
-                break
-        except Exception:
-            pass
+        if image_on_screen("service_unavailable.png", confidence=0.8):
+            service_unavailable = True
+            break
             
-        try:
-            # Check if we moved to the next page successfully
-            if pyautogui.locateOnScreen("firstname_field.png", confidence=0.8):
-                break
-        except Exception:
-            pass
+        # Check if we moved to the next page successfully
+        if image_on_screen("firstname_field.png", confidence=0.8):
+            break
             
         time.sleep(1)
 
     if service_unavailable:
         print("Service not available page detected. Ending for this account.")
         take_result_screenshot(prefix="service_not_available")
-        return False, "service_not_available"
+        return False, RESULT_SERVICE_NOT_AVAILABLE
         
     random_delay(2, 4)
     time.sleep(2)
@@ -579,7 +438,7 @@ def main(config, url, proxy=None):
             break
         print("Name page failed to advance, retrying...")
     else:
-        raise Exception("Failed to pass Name page after 2 attempts.")
+        raise AutomationError("Failed to pass Name page after 2 attempts.")
 
     # 8. DOB & Phone page
     for attempt in range(2):
@@ -649,7 +508,7 @@ def main(config, url, proxy=None):
             break
         print("DOB & Phone page failed to advance, retrying with fallback...")
     else:
-        raise Exception("Failed to pass DOB & Phone page after 2 attempts.")
+        raise AutomationError("Failed to pass DOB & Phone page after 2 attempts.")
 
     # 9. Address page
     for attempt in range(2):
@@ -694,7 +553,7 @@ def main(config, url, proxy=None):
             break
         print("Address field still detected, retrying...")
     else:
-        raise Exception("Failed to pass Address page after 2 attempts.")
+        raise AutomationError("Failed to pass Address page after 2 attempts.")
 
     # 10. Job Status, Signature, Verify
     for attempt in range(2):
@@ -743,7 +602,7 @@ def main(config, url, proxy=None):
             break
         print("Verify my identity button not found, triggering retry...")
     else:
-        raise Exception("Verify my identity button not found after 2 attempts.")
+        raise AutomationError("Verify my identity button not found after 2 attempts.")
 
     # --- FINAL VERIFICATION AND TERMS ACCEPTANCE ---
     print("Waiting for success, 'another account', or 'unable to verify' screen...")
@@ -755,26 +614,17 @@ def main(config, url, proxy=None):
     unable_to_verify_found = False
     
     while time.time() - start_time < 30:
-        try:
-            if pyautogui.locateOnScreen("success.png", confidence=0.8):
-                success_found = True
-                break
-        except Exception:
-            pass
+        if image_on_screen("success.png", confidence=0.8):
+            success_found = True
+            break
             
-        try:
-            if pyautogui.locateOnScreen("we_found_another_account.png", confidence=0.8):
-                another_account_found = True
-                break
-        except Exception:
-            pass
+        if image_on_screen("we_found_another_account.png", confidence=0.8):
+            another_account_found = True
+            break
 
-        try:
-            if pyautogui.locateOnScreen("we_couldnt_verify_your_data1.png", confidence=0.8):
-                unable_to_verify_found = True
-                break
-        except Exception:
-            pass
+        if image_on_screen("we_couldnt_verify_your_data1.png", confidence=0.8):
+            unable_to_verify_found = True
+            break
             
         time.sleep(1)
 
@@ -785,14 +635,14 @@ def main(config, url, proxy=None):
         print("'We couldn't verify your data' image detected. Taking screenshot and ending.")
         take_result_screenshot(prefix="unable_to_verify")
         print("Automation finished for this account due to verification failure.")
-        return False, "unable_to_verify"
+        return False, RESULT_UNABLE_TO_VERIFY
     
     if another_account_found:
         print("'We found another account' image detected. Taking screenshot and ending.")
         take_result_screenshot(prefix="we_found_another_account")
         # Do not mark as created, but we handled it gracefully.
         print("Automation finished for this account due to finding another account.")
-        return False, "we_found_another_account"
+        return False, RESULT_WE_FOUND_ANOTHER_ACCOUNT
     
     if success_found:
         print("Success image found, clicking to accept terms.")
@@ -837,10 +687,10 @@ def main(config, url, proxy=None):
             print("'Do it later' image not found, proceeding anyway...")
             
         is_created = True
-        status = "created"
+        status = RESULT_CREATED
     else:
         print("Success image not found after verification. Marking as standard success instead of created.")
-        status = "success_not_created"
+        status = RESULT_SUCCESS_NOT_CREATED
 
     print("Automation finished for this account.")
     return is_created, status
@@ -848,26 +698,24 @@ def main(config, url, proxy=None):
 def take_result_screenshot(prefix="result"):
     """Takes a screenshot and saves it to a dated folder inside images_result."""
     date_str = datetime.datetime.now().strftime("%Y-%m-%d")
-    folder = os.path.join("images_result", date_str)
+    folder = RESULTS_DIR / date_str
     os.makedirs(folder, exist_ok=True)
     rand_str = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
-    filepath = os.path.join(folder, f"{prefix}_{rand_str}.png")
+    filepath = folder / f"{prefix}_{rand_str}.png"
     pyautogui.screenshot(filepath)
-    return filepath
+    return str(filepath)
 
 def run_all_accounts():
-    accounts_file = "accounts.json"
+    accounts_file = ACCOUNTS_PATH
     
     # If file doesn't exist, create a template with one entry
-    if not os.path.exists(accounts_file):
+    if not accounts_file.exists():
         print(f"Creating template {accounts_file}...")
-        with open(accounts_file, "w") as f:
-            json.dump([DEFAULT_CONFIG], f, indent=4)
+        save_accounts([DEFAULT_CONFIG], accounts_file)
         print(f"Please open {accounts_file}, add your accounts as a list, and run this script again.")
         return
 
-    with open(accounts_file, "r") as f:
-        accounts = json.load(f)
+    accounts = load_accounts(accounts_file)
         
     print(f"Loaded {len(accounts)} accounts from {accounts_file}.")
     
@@ -886,9 +734,7 @@ def run_all_accounts():
         print(f"Starting account {i+1}/{len(accounts)}: {account_data.get('email', 'Unknown')}")
         print(f"{'='*50}")
         
-        # Merge with default config to ensure no missing keys
-        current_config = DEFAULT_CONFIG.copy()
-        current_config.update(account_data)
+        current_config = prepare_account_config(account_data, DEFAULT_CONFIG)
         
         is_valid, val_reason = validate_account(current_config)
         if not is_valid:
@@ -898,79 +744,37 @@ def run_all_accounts():
             account_data["skipped"] = True
             account_data["reason"] = val_reason
             account_data["timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            with open(accounts_file, "w") as f:
-                json.dump(accounts, f, indent=4)
+            save_accounts(accounts, accounts_file)
             continue
         
-        # Override the username to always be: lastname + firstname + 4 random digits
-        first_name = clean_special_characters(current_config.get("firstName", "first"))
-        last_name = clean_special_characters(current_config.get("lastName", "last"))
-        random_digits = random.randint(1000, 9999)
-        current_config["username"] = f"{last_name}{first_name}{random_digits}"
         print(f"Generated username: {current_config['username']} (cleaned from {current_config.get('firstName')} {current_config.get('lastName')})")
-        
-        # Check and update password if it's less than 8 characters
-        if len(current_config.get("password", "")) < 8:
-            new_password = f"{current_config.get('password', '')}{last_name}"
-            current_config["password"] = new_password
-            account_data["password"] = new_password
-            print(f"Password was less than 8 characters. Updated password to: {new_password}")
                 
         url, proxy, wait_time = get_next_url_and_proxy(settings, current_config)
         if wait_time > 0:
             print(f"Proxy cooldown active. Waiting {int(wait_time)} seconds before starting...")
             time.sleep(wait_time)
                 
-        screenshot_path = ""
-        is_another_account = False
         try:
             is_created, status = main(current_config, url, proxy)
-            success = True
-            
-            if status == "we_found_another_account":
-                reason = "We found another account"
-                screenshot_path = take_result_screenshot("we_found_another_account")
-            elif status == "service_not_available":
-                reason = "Service not available"
-                screenshot_path = take_result_screenshot("service_not_available")
-            elif status == "unable_to_verify":
-                reason = "Unable to verify data"
-                screenshot_path = take_result_screenshot("unable_to_verify")
-            elif status == "success_not_created":
-                reason = "Finished without creating account (standard success fallback)."
-                screenshot_path = take_result_screenshot("success")
-            else:
-                reason = "Successfully completed."
-                screenshot_path = take_result_screenshot("success")
+            outcome = outcome_from_result(is_created, status)
                 
         except Exception as e:
-            is_created = False
-            success = False
-            reason = str(e)
-            print(f"Error encountered: {reason}")
-            screenshot_path = take_result_screenshot("error")
+            outcome = outcome_from_exception(e)
+            print(f"Error encountered: {outcome.reason}")
             print("Waiting 2 minutes before closing browser due to error...")
             time.sleep(120)
-            
-        # Refine reason if it completed without error but didn't create account
-        if success and not is_created:
-            reason = "Finished without creating account (possibly 'we found another account' or standard success fallback)."
-            
-        account_data["ran"] = True
-        account_data["success"] = success
-        account_data["created"] = is_created
-        account_data["skipped"] = "Account already exist" in str(reason)
-        account_data["we_found_another_account"] = ("We found another account" in str(reason))
-        account_data["service_not_available"] = ("Service not available" in str(reason))
-        account_data["unable_to_verify"] = ("Unable to verify" in str(reason))
-        account_data["reason"] = reason
-        account_data["screenshot"] = screenshot_path
-        account_data["username"] = current_config["username"] # Ensure UI/JSON saves the generated username
-        account_data["timestamp"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        screenshot_path = take_result_screenshot(outcome.screenshot_prefix)
+        apply_outcome_to_account(
+            account_data,
+            outcome,
+            screenshot_path,
+            username=current_config["username"],
+            timestamp=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        )
         
         # Save progress immediately
-        with open(accounts_file, "w") as f:
-            json.dump(accounts, f, indent=4)
+        save_accounts(accounts, accounts_file)
             
         # Close browser automatically so the next run starts fresh
         kill_browser()
@@ -980,7 +784,7 @@ def run_all_accounts():
             settings = load_settings()
             proxies = settings.get("proxies", [])
             if len(proxies) <= 1:
-                wait_time = 10 if success else 11 # Wait 10 mins on success, 11 on error
+                wait_time = 10 if outcome.success else 11 # Wait 10 mins on success, 11 on error
                 print(f"\nWaiting {wait_time} minutes before the next account...")
                 time.sleep(wait_time * 60)
             else:

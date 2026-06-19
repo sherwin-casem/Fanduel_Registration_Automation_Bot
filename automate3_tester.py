@@ -9,32 +9,40 @@ import re
 import string
 import datetime
 
+from fundrel_automation.core.env import load_env
+
+ENV = load_env()
+
+
+def env_value(name, default=""):
+    return os.getenv(name) or ENV.get(name, default)
+
 # ------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------
 CONFIG_PATH = "config.json"
 DEFAULT_CONFIG = {
-    "email": "mari.annesoucy716+app@gmail.com",
-    "username": f"johnbenns{random.randint(100000, 999999)}",
-    "password": "Aaron0012",
-    "firstName": "john",
-    "middleName": "francis",
-    "lastName": "benns",
+    "email": "person@example.com",
+    "username": f"user{random.randint(100000, 999999)}",
+    "password": "example-password",
+    "firstName": "First",
+    "middleName": "",
+    "lastName": "Last",
     "apt": "",
-    "month": "11",
-    "day": "02",
-    "year": "1997",
-    "phone": "9053370212",
-    "address": "37 holmes dr",
-    "city": "calendon",
-    "postcode": "L7K 0A6"
+    "month": "01",
+    "day": "01",
+    "year": "1990",
+    "phone": "5555555555",
+    "address": "123 Example Street",
+    "city": "Toronto",
+    "postcode": "A1A 1A1"
 }
 
 # Proxy
-PROXY_HOST = "gate.decodo.com"
-PROXY_PORT = "10001"
-PROXY_USER = "user-sph94wqr63-country-ca-city-toronto"
-PROXY_PASS = "7t+zeL4Fkw1oCaxjP6"
+PROXY_HOST = env_value("FUNDREL_PROXY_HOST", "proxy.example.com")
+PROXY_PORT = env_value("FUNDREL_PROXY_PORT", "10001")
+PROXY_USER = env_value("FUNDREL_PROXY_USER", "proxy-user")
+PROXY_PASS = env_value("FUNDREL_PROXY_PASS", "proxy-password")
 
 def create_proxy_extension(path="proxy_auth_ext"):
     os.makedirs(path, exist_ok=True)

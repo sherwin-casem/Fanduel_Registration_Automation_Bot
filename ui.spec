@@ -5,7 +5,7 @@ a = Analysis(
     ['ui.py'],
     pathex=[],
     binaries=[],
-    datas=[('*.png', '.'), ('*.json', '.')],
+    datas=[('assets/image_targets/*.png', 'assets/image_targets'), ('*.json', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
