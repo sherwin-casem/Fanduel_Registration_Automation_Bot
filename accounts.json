@@ -1201,7 +1201,7 @@
     },
     {
         "email": "anjums6767+007@gmail.com",
-        "username": "",
+        "username": "priersharon1363",
         "password": "Sharon0012",
         "firstName": "sharon",
         "middleName": "lp",
@@ -1215,14 +1215,16 @@
         "city": "schomberg",
         "province": "ON",
         "postcode": "L0G 1T0",
-        "ran": false,
+        "ran": true,
         "success": false,
         "created": false,
-        "skipped": false,
+        "skipped": true,
         "we_found_another_account": false,
         "service_not_available": false,
-        "reason": "",
-        "unable_to_verify": false
+        "reason": "Account already exist",
+        "unable_to_verify": false,
+        "screenshot": "images_result\\2026-06-18\\error_pzzf9xsn.png",
+        "timestamp": "2026-06-18 20:53:48"
     },
     {
         "email": "imadab098+test@gmail.com",
@@ -1904,7 +1906,7 @@
     },
     {
         "email": "anjums6767+testing@gmail.com",
-        "username": "cullensherri4278",
+        "username": "cullensherri1723",
         "password": "Sherri0012",
         "firstName": "sherri",
         "middleName": "lee",
@@ -1918,14 +1920,16 @@
         "city": "hamilton",
         "province": "ON",
         "postcode": "L8H 5B5",
-        "ran": false,
-        "success": false,
-        "created": false,
+        "ran": true,
+        "success": true,
+        "created": true,
         "skipped": false,
         "we_found_another_account": false,
         "service_not_available": false,
         "unable_to_verify": false,
-        "reason": ""
+        "reason": "Successfully completed.",
+        "screenshot": "images_result\\2026-06-18\\success_7nxjsh7n.png",
+        "timestamp": "2026-06-18 21:03:09"
     },
     {
         "email": "ccorrin754+dev@gmail.com",

@@ -5,14 +5,14 @@
             "port": "10050",
             "user": "user-sph94wqr63-country-ca-city-toronto-sessionduration-900",
             "pass": "7t+zeL4Fkw1oCaxjP6",
-            "last_use": 1781793048.425083
+            "last_use": 1781812248.7501602
         },
         {
             "host": "gate.decodo.com",
             "port": "10030",
             "user": "user-sph94wqr63-country-ca-city-toronto-sessionduration-900",
             "pass": "7t+zeL4Fkw1oCaxjP6",
-            "last_use": 1781792562.1649873
+            "last_use": 1781812555.2032084
         },
         {
             "host": "gate.decodo.com",
@@ -174,7 +174,7 @@
     ],
     "referral_mode": "rotate",
     "referral_state": {
-        "index": 3,
+        "index": 1,
         "start_time": 0,
         "random_bag": []
     },

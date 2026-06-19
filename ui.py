@@ -11,6 +11,38 @@ import openpyxl
 from openpyxl.styles import Font
 import automate2  # Imports your existing automation script
 
+class ToolTip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tw = None
+        self.widget.bind("<Enter>", self.enter, add="+")
+        self.widget.bind("<Leave>", self.leave, add="+")
+
+    def enter(self, event=None):
+        x = y = 0
+        try:
+            x, y, cx, cy = self.widget.bbox("insert")
+        except:
+            pass
+        x += self.widget.winfo_rootx() + 25
+        y += self.widget.winfo_rooty() + 20
+        self.tw = tk.Toplevel(self.widget)
+        self.tw.wm_overrideredirect(True)
+        self.tw.wm_geometry("+%d+%d" % (x, y))
+        label = tk.Label(self.tw, text=self.text, justify='left',
+                         background='#ffffe0', relief='solid', borderwidth=1,
+                         font=("Segoe UI", 9, "normal"), padx=5, pady=3)
+        label.pack(ipadx=1)
+
+    def leave(self, event=None):
+        if self.tw:
+            self.tw.destroy()
+            self.tw = None
+
+def add_tooltip(widget, text):
+    ToolTip(widget, text)
+
 # Ensure we are in the correct directory so images and config load properly
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(BASE_DIR)
@@ -71,25 +103,28 @@ class AutoUI:
         
         btn_font = ("Segoe UI", 10, "bold")
         
-        def create_btn(parent, text, cmd, bg_col, fg_col="black"):
+        def create_btn(parent, text, cmd, bg_col, fg_col="black", tooltip_text=""):
             btn = tk.Button(parent, text=text, command=cmd, bg=bg_col, fg=fg_col, font=btn_font, 
                             relief=tk.FLAT, padx=15, pady=5, cursor="hand2")
             # Hover effects
-            btn.bind("<Enter>", lambda e: btn.config(bg="#d1d5db" if bg_col == "#e2e8f0" else bg_col))
-            btn.bind("<Leave>", lambda e: btn.config(bg=bg_col))
+            btn.bind("<Enter>", lambda e: btn.config(bg="#d1d5db" if bg_col == "#e2e8f0" else bg_col), add="+")
+            btn.bind("<Leave>", lambda e: btn.config(bg=bg_col), add="+")
+            if tooltip_text:
+                add_tooltip(btn, tooltip_text)
             return btn
 
-        create_btn(toolbar, "📁 Upload JSON", self.upload_json, "#e2e8f0").pack(side=tk.LEFT, padx=5)
-        create_btn(toolbar, "➕ Add Account", self.add_account, "#e2e8f0").pack(side=tk.LEFT, padx=5)
-        create_btn(toolbar, "⚙ Settings", self.open_settings, "#ffc107").pack(side=tk.LEFT, padx=5)
+        create_btn(toolbar, "📁 Upload JSON", self.upload_json, "#e2e8f0", tooltip_text="Load accounts from a .json file").pack(side=tk.LEFT, padx=5)
+        create_btn(toolbar, "📁 Upload Excel", self.upload_excel, "#e2e8f0", tooltip_text="Load accounts from a .xlsx or .xls file").pack(side=tk.LEFT, padx=5)
+        create_btn(toolbar, "➕ Add Account", self.add_account, "#e2e8f0", tooltip_text="Manually enter a single account's details").pack(side=tk.LEFT, padx=5)
+        create_btn(toolbar, "⚙ Settings", self.open_settings, "#ffc107", tooltip_text="Configure proxies, referrals, and Edge browser path").pack(side=tk.LEFT, padx=5)
         
         separator = tk.Frame(toolbar, width=2, bg="#cbd5e1")
         separator.pack(side=tk.LEFT, fill=tk.Y, padx=15, pady=2)
         
-        create_btn(toolbar, "▶ Run Pending", self.run_pending, "#28a745", "white").pack(side=tk.LEFT, padx=5)
-        create_btn(toolbar, "▶ Run Selected", self.run_selected, "#17a2b8", "white").pack(side=tk.LEFT, padx=5)
+        create_btn(toolbar, "▶ Run Pending", self.run_pending, "#28a745", "white", tooltip_text="Start automating all accounts in the Pending tab").pack(side=tk.LEFT, padx=5)
+        create_btn(toolbar, "▶ Run Selected", self.run_selected, "#17a2b8", "white", tooltip_text="Start automating ONLY the accounts you have highlighted in the Pending tab").pack(side=tk.LEFT, padx=5)
         
-        self.stop_btn = create_btn(toolbar, "🛑 STOP EVERYTHING", self.stop_automation, "#dc3545", "white")
+        self.stop_btn = create_btn(toolbar, "🛑 STOP EVERYTHING", self.stop_automation, "#dc3545", "white", tooltip_text="EMERGENCY BRAKE: Stop the bot immediately and close the browser")
         self.stop_btn.config(state=tk.DISABLED)
         self.stop_btn.pack(side=tk.RIGHT, padx=10)
         
@@ -123,6 +158,33 @@ class AutoUI:
         self.notebook.add(self.tab_service_unavailable, text="  ⚠️ Service Unavailable  ")
         self.notebook.add(self.tab_unable_to_verify, text="  ❓ Unable to Verify  ")
         
+        # Tooltips for notebook tabs
+        tab_tooltips = {
+            0: "Accounts that haven't been run yet, or were sent back to try again.",
+            1: "Accounts that successfully reached the final success screen.",
+            2: "Accounts that encountered an error while the bot was running.",
+            3: "Accounts the bot skipped (usually because it detected they already exist).",
+            4: "Accounts where FanDuel warned 'We found another account'.",
+            5: "Accounts where FanDuel's servers were down.",
+            6: "Accounts where FanDuel couldn't verify the personal data."
+        }
+        
+        self.notebook_tooltip = ToolTip(self.notebook, "")
+        def on_notebook_motion(event):
+            try:
+                index = self.notebook.index(f"@{event.x},{event.y}")
+                if index in tab_tooltips:
+                    self.notebook_tooltip.text = tab_tooltips[index]
+                    if not self.notebook_tooltip.tw:
+                        self.notebook_tooltip.enter()
+                else:
+                    self.notebook_tooltip.leave()
+            except tk.TclError:
+                self.notebook_tooltip.leave()
+                
+        self.notebook.bind("<Motion>", on_notebook_motion)
+        self.notebook.bind("<Leave>", lambda e: self.notebook_tooltip.leave())
+        
         # --- TREEVIEWS ---
         columns_pending = ("ID", "Email", "Username", "Status")
         columns_done = ("ID", "Email", "Username", "Time Ran", "Status")
@@ -154,22 +216,36 @@ class AutoUI:
         control_bar = tk.Frame(container, bg="#ffffff", pady=5, padx=10)
         control_bar.pack(side=tk.TOP, fill=tk.X)
         
-        tk.Label(control_bar, text="Filter by Date:", font=("Segoe UI", 10, "bold"), bg="#ffffff").pack(side=tk.LEFT, padx=5)
+        lbl = tk.Label(control_bar, text="Filter by Date:", font=("Segoe UI", 10, "bold"), bg="#ffffff")
+        lbl.pack(side=tk.LEFT, padx=5)
+        add_tooltip(lbl, "Select a date to view accounts that were run on that specific day")
+        
         date_var = tk.StringVar(value="All Dates")
         date_combo = ttk.Combobox(control_bar, textvariable=date_var, state="readonly", width=20)
         date_combo.pack(side=tk.LEFT, padx=5)
         date_combo.bind("<<ComboboxSelected>>", lambda e, t=tab_name, v=date_var: self.filter_by_date(t, v))
+        add_tooltip(date_combo, "Select a date to view accounts that were run on that specific day")
         
-        tk.Button(control_bar, text="📥 Export JSON", command=lambda t=tab_name: self.export_data(t, "json"), 
-                  bg="#e2e8f0", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=10).pack(side=tk.RIGHT, padx=5)
-        tk.Button(control_bar, text="📥 Export CSV", command=lambda t=tab_name: self.export_data(t, "csv"), 
-                  bg="#e2e8f0", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=10).pack(side=tk.RIGHT, padx=5)
-        tk.Button(control_bar, text="📥 Export Excel", command=lambda t=tab_name: self.export_data(t, "excel"), 
-                  bg="#e2e8f0", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=10).pack(side=tk.RIGHT, padx=5)
+        btn_json = tk.Button(control_bar, text="📥 Export JSON", command=lambda t=tab_name: self.export_data(t, "json"), 
+                  bg="#e2e8f0", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=10)
+        btn_json.pack(side=tk.RIGHT, padx=5)
+        add_tooltip(btn_json, "Download the current list of accounts as a JSON file")
+        
+        btn_csv = tk.Button(control_bar, text="📥 Export CSV", command=lambda t=tab_name: self.export_data(t, "csv"), 
+                  bg="#e2e8f0", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=10)
+        btn_csv.pack(side=tk.RIGHT, padx=5)
+        add_tooltip(btn_csv, "Download the current list of accounts as a CSV file")
+        
+        btn_excel = tk.Button(control_bar, text="📥 Export Excel", command=lambda t=tab_name: self.export_data(t, "excel"), 
+                  bg="#e2e8f0", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=10)
+        btn_excel.pack(side=tk.RIGHT, padx=5)
+        add_tooltip(btn_excel, "Download the current list of accounts as an Excel (.xlsx) file")
         
         if tab_name not in ["pending", "created"]:
-            tk.Button(control_bar, text="🔄 Mark All & Send to Pending", command=lambda t=tab_name: self.send_to_pending(t), 
-                      bg="#ffc107", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=10).pack(side=tk.RIGHT, padx=5)
+            btn_mark = tk.Button(control_bar, text="🔄 Mark All & Send to Pending", command=lambda t=tab_name: self.send_to_pending(t), 
+                      bg="#ffc107", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=10)
+            btn_mark.pack(side=tk.RIGHT, padx=5)
+            add_tooltip(btn_mark, "Move all accounts in this tab back to the Pending tab so the bot can try them again")
         
         # --- Treeview --- 
         tree = ttk.Treeview(container, columns=columns, show="headings", selectmode="extended")
@@ -508,14 +584,14 @@ class AutoUI:
         ref_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         ref_str = json.dumps(settings.get("referrals", []), indent=4)
         ref_text.insert(tk.END, ref_str)
-        tk.Label(tab_referrals, text="Enter Referrals: Can be complex JSON, or a simple list like ['url1', 'url2'], or just one URL per line.").pack(pady=5)
+        tk.Label(tab_referrals, text="Enter Referrals: Wrap in quotes. When appending, ALWAYS add a comma after the previous one:\n\"www.old.com\", \"www.new.com\"").pack(pady=5)
         
         # Proxies Tab
         proxy_text = tk.Text(tab_proxies, height=20)
         proxy_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         proxy_str = json.dumps(settings.get("proxies", []), indent=4)
         proxy_text.insert(tk.END, proxy_str)
-        tk.Label(tab_proxies, text="Enter Proxies: Can be complex JSON, or one proxy per line (host:port:user:pass).").pack(pady=5)
+        tk.Label(tab_proxies, text="Enter Proxies: Wrap in quotes. When appending, ALWAYS add a comma after the previous one:\n\"old:proxy:1:1\", \"new:proxy:2:2\"").pack(pady=5)
         
         def save_settings_ui():
             # Process Referrals
@@ -537,7 +613,7 @@ class AutoUI:
                     if '{' in ref_raw:
                         messagebox.showerror("Error", f"Referrals format is invalid. If mixing JSON and plain text, ensure it's a valid JSON array.\nError: {e}")
                         return
-                    # Fallback to simple format parsing (e.g., ['url1'] or one URL per line)
+                    # Fallback to simple format parsing (e.g., "url1", "url2" or one URL per line)
                     import re
                     clean_ref = ref_raw.strip("[]")
                     items = re.split(r'[\n,]+', clean_ref)
@@ -578,20 +654,23 @@ class AutoUI:
                     # Fallback to host:port:user:pass parsing
                     lines = proxy_raw.split('\n')
                     for line in lines:
-                        line = line.strip().strip("[],'\"")
-                        if not line: continue
-                        parts = line.split(':', 3)
-                        if len(parts) >= 4:
-                            proxies.append({
-                                "host": parts[0].strip(),
-                                "port": parts[1].strip(),
-                                "user": parts[2].strip(),
-                                "pass": parts[3].strip(),
-                                "last_use": 0
-                            })
-                        else:
-                            messagebox.showerror("Error", f"Invalid proxy format on line:\n{line}\nExpected host:port:user:pass")
-                            return
+                        # For proxies separated by commas on the same line, handle them too
+                        sub_items = line.split(',')
+                        for sub_item in sub_items:
+                            sub_item = sub_item.strip().strip("[],'\"")
+                            if not sub_item: continue
+                            parts = sub_item.split(':', 3)
+                            if len(parts) >= 4:
+                                proxies.append({
+                                    "host": parts[0].strip(),
+                                    "port": parts[1].strip(),
+                                    "user": parts[2].strip(),
+                                    "pass": parts[3].strip(),
+                                    "last_use": 0
+                                })
+                            else:
+                                messagebox.showerror("Error", f"Invalid proxy format:\n{sub_item}\nExpected host:port:user:pass")
+                                return
                 
             settings["referrals"] = referrals
             settings["proxies"] = proxies
@@ -625,6 +704,70 @@ class AutoUI:
                         messagebox.showerror("Error", "JSON must contain a list of accounts.")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to read file: {e}")
+
+    def upload_excel(self):
+        file_path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx;*.xls")])
+        if file_path:
+            try:
+                wb = openpyxl.load_workbook(file_path, data_only=True)
+                ws = wb.active
+                
+                headers = []
+                for cell in ws[1]:
+                    headers.append(str(cell.value).strip() if cell.value else "")
+                
+                if not headers or not any(headers):
+                    messagebox.showerror("Error", "No headers found in the first row of the Excel file.")
+                    return
+                
+                new_accs = []
+                # Map common non-tech user column names to exact JSON keys
+                key_map = {
+                    "firstname": "firstName", "first": "firstName",
+                    "middlename": "middleName", "middle": "middleName",
+                    "lastname": "lastName", "last": "lastName",
+                    "referralurl": "referral_url", "referral": "referral_url",
+                    "zipcode": "postcode", "zip": "postcode", "postalcode": "postcode",
+                    "state": "province"
+                }
+                valid_exact_keys = ["email", "password", "apt", "address", "city", "province", "postcode", "month", "day", "year", "phone", "username"]
+                
+                for row in ws.iter_rows(min_row=2, values_only=True):
+                    acc = {}
+                    has_data = False
+                    for i, val in enumerate(row):
+                        if i < len(headers) and headers[i]:
+                            raw_key = headers[i]
+                            clean_key = raw_key.lower().replace(" ", "").replace("_", "")
+                            
+                            if clean_key in key_map:
+                                final_key = key_map[clean_key]
+                            elif clean_key in valid_exact_keys:
+                                final_key = clean_key
+                            else:
+                                final_key = raw_key # Fallback
+                                
+                            val_str = str(val).strip() if val is not None else ""
+                            if val_str:
+                                has_data = True
+                            acc[final_key] = val_str
+                    
+                    if has_data:
+                        # Clean up numbers parsed as floats from Excel (e.g. '11.0' -> '11')
+                        for k in ["month", "day", "year", "phone", "postcode", "apt"]:
+                            if k in acc and acc[k].endswith(".0"):
+                                acc[k] = acc[k][:-2]
+                        new_accs.append(acc)
+                
+                if new_accs:
+                    self.accounts.extend(new_accs)
+                    self.save_accounts()
+                    self.refresh_lists()
+                    messagebox.showinfo("Success", f"Appended {len(new_accs)} accounts from Excel.")
+                else:
+                    messagebox.showinfo("Info", "No valid data found in the Excel file.")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to read Excel file: {e}")
 
     def get_selected_indices(self, tree):
         selected = tree.selection()
@@ -903,7 +1046,7 @@ class AutoUI:
         self.root.after(0, lambda: self.stop_btn.config(state=tk.DISABLED, bg="#e2e8f0", cursor="arrow"))
         self.root.after(0, lambda: self.warning_lbl.config(text=""))
         self.root.after(0, lambda: self.status_lbl.config(text="🟢 Idle", fg="#28a745"))
-        self.root.after(0, lambda: messagebox.showinfo("Done", "Automation queue finished or was stopped."))
+        self.root.after(0, lambda: messagebox.showinfo("Done", "Automation queue finished."))
 
 if __name__ == "__main__":
     root = tk.Tk()
