@@ -1960,7 +1960,7 @@
     },
     {
         "email": "imadab098+user@gmail.com",
-        "username": "smithjodie8047",
+        "username": "smithjodie3456",
         "password": "Jodie0012",
         "firstName": "jodie",
         "middleName": "lee",
@@ -1974,14 +1974,16 @@
         "city": "windsor",
         "province": "ON",
         "postcode": "N9C 2A3",
-        "ran": false,
+        "ran": true,
         "success": false,
         "created": false,
         "skipped": false,
         "we_found_another_account": false,
         "service_not_available": false,
         "unable_to_verify": false,
-        "reason": ""
+        "reason": "maximum recursion depth exceeded while calling a Python object",
+        "screenshot": "images_result\\2026-06-19\\error_24kqfjx5.png",
+        "timestamp": "2026-06-19 16:02:53"
     },
     {
         "email": "natalyaw200+api@gmail.com",
