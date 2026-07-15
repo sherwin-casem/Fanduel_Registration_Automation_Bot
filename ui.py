@@ -13,7 +13,7 @@ import automate2  # Imports your existing automation script
 from fundrel_automation.core.accounts import load_accounts as load_accounts_file
 from fundrel_automation.core.accounts import prepare_account_config
 from fundrel_automation.core.accounts import save_accounts as save_accounts_file
-from fundrel_automation.core.config import load_settings, parse_proxies, parse_referrals, save_settings
+from fundrel_automation.core.config import load_settings, parse_proxies, save_settings
 from fundrel_automation.core.logging_config import get_logger
 from fundrel_automation.core.paths import ACCOUNTS_PATH, workspace_path
 from fundrel_automation.core.results import (
@@ -141,7 +141,7 @@ class AutoUI:
         create_btn(toolbar, "Upload JSON", self.upload_json, "#e2e8f0", tooltip_text="Load accounts from a .json file").pack(side=tk.LEFT, padx=5)
         create_btn(toolbar, "Upload Excel", self.upload_excel, "#e2e8f0", tooltip_text="Load accounts from a .xlsx or .xls file").pack(side=tk.LEFT, padx=5)
         create_btn(toolbar, "Add Account", self.add_account, "#e2e8f0", tooltip_text="Manually enter a single account's details").pack(side=tk.LEFT, padx=5)
-        create_btn(toolbar, "Settings", self.open_settings, "#ffc107", tooltip_text="Configure proxies, referrals, and Edge browser path").pack(side=tk.LEFT, padx=5)
+        create_btn(toolbar, "Settings", self.open_settings, "#ffc107", tooltip_text="Configure proxies and Edge browser path").pack(side=tk.LEFT, padx=5)
         
         separator = tk.Frame(toolbar, width=2, bg="#cbd5e1")
         separator.pack(side=tk.LEFT, fill=tk.Y, padx=15, pady=2)
@@ -526,40 +526,17 @@ class AutoUI:
         notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         tab_general = ttk.Frame(notebook)
-        tab_referrals = ttk.Frame(notebook)
         tab_proxies = ttk.Frame(notebook)
         
         notebook.add(tab_general, text="General")
-        notebook.add(tab_referrals, text="Referrals")
         notebook.add(tab_proxies, text="Proxies")
         
         # General Tab
-        tk.Label(tab_general, text="Referral Mode:", font=("Segoe UI", 10, "bold")).pack(pady=(20, 5))
-        mode_var = tk.StringVar(value=settings.get("referral_mode", "rotate"))
-        modes = [
-            ("Rotate (A -> B -> C -> A)", "rotate", "Runs accounts sequentially through all enabled referrals one by one."),
-            ("Sequential 60 mins (One for 60m, then next)", "sequential_60m", "Sticks to one referral for 60 minutes, then switches to the next available one."),
-            ("Random Mix (Random but equal distribution)", "random_mix", "Randomly selects a referral for each account, ensuring equal usage over 24 hours."),
-            ("Percentage Allocation (Based on weights)", "percentage_allocation", "Allocates accounts to referrals based on the 'percentage' value set in the Referrals tab.")
-        ]
-        for text, val, desc in modes:
-            tk.Radiobutton(tab_general, text=text, variable=mode_var, value=val).pack(anchor=tk.W, padx=20)
-            tk.Label(tab_general, text=desc, font=("Segoe UI", 8), fg="#666666").pack(anchor=tk.W, padx=40, pady=(0, 10))
-            
-        tk.Frame(tab_general, height=2, bg="#cbd5e1").pack(fill=tk.X, padx=20, pady=10)
-        
-        tk.Label(tab_general, text="Edge Browser Path:", font=("Segoe UI", 10, "bold")).pack(pady=(10, 5))
+        tk.Label(tab_general, text="Edge Browser Path:", font=("Segoe UI", 10, "bold")).pack(pady=(20, 5))
         tk.Label(tab_general, text=r"Example: C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe", font=("Segoe UI", 8), fg="#666666").pack(anchor=tk.W, padx=40)
         
         edge_path_var = tk.StringVar(value=settings.get("edge_path", r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"))
         tk.Entry(tab_general, textvariable=edge_path_var, width=70).pack(anchor=tk.W, padx=40, pady=(0, 10))
-            
-        # Referrals Tab
-        ref_text = tk.Text(tab_referrals, height=20)
-        ref_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        ref_str = json.dumps(settings.get("referrals", []), indent=4)
-        ref_text.insert(tk.END, ref_str)
-        tk.Label(tab_referrals, text="Enter Referrals: Wrap in quotes. When appending, ALWAYS add a comma after the previous one:\n\"www.old.com\", \"www.new.com\"").pack(pady=5)
         
         # Proxies Tab
         proxy_text = tk.Text(tab_proxies, height=20)
@@ -569,30 +546,17 @@ class AutoUI:
         tk.Label(tab_proxies, text="Enter Proxies: Wrap in quotes. When appending, ALWAYS add a comma after the previous one:\n\"old:proxy:1:1\", \"new:proxy:2:2\"").pack(pady=5)
         
         def save_settings_ui():
-            ref_raw = ref_text.get("1.0", tk.END).strip()
             proxy_raw = proxy_text.get("1.0", tk.END).strip()
-
-            try:
-                referrals = parse_referrals(ref_raw)
-            except ValueError as e:
-                messagebox.showerror("Action needed", str(e))
-                return
 
             try:
                 proxies = parse_proxies(proxy_raw)
             except ValueError as e:
                 messagebox.showerror("Action needed", str(e))
                 return
-                
-            settings["referrals"] = referrals
+
             settings["proxies"] = proxies
-            settings["referral_mode"] = mode_var.get()
             settings["edge_path"] = edge_path_var.get().strip()
-            
-            # Clean up old keys
-            if "urls" in settings:
-                del settings["urls"]
-            
+
             save_settings(settings)
             messagebox.showinfo("Done", "Settings saved successfully.")
             dialog.destroy()
@@ -639,7 +603,6 @@ class AutoUI:
                     "firstname": "firstName", "first": "firstName",
                     "middlename": "middleName", "middle": "middleName",
                     "lastname": "lastName", "last": "lastName",
-                    "referralurl": "referral_url", "referral": "referral_url",
                     "zipcode": "postcode", "zip": "postcode", "postalcode": "postcode",
                     "state": "province"
                 }
@@ -712,7 +675,7 @@ class AutoUI:
         
         fields = [
             "email", "username", "password", "firstName", "middleName", "lastName", 
-            "apt", "address", "city", "province", "postcode", "phone", "month", "day", "year", "referral_url"
+            "apt", "address", "city", "province", "postcode", "phone", "month", "day", "year"
         ]
         entries = {}
         acc_data = self.accounts[idx] if idx is not None else automate2.DEFAULT_CONFIG.copy()
