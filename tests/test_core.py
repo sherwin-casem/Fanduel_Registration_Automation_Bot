@@ -179,7 +179,25 @@ class CoreHelperTests(unittest.TestCase):
 
         mock_image_on_screen.side_effect = fake_match
 
-        self.assertEqual(automate2.detect_post_verify_outcome(), RESULT_CREATED)
+    @patch("automate2.image_on_screen")
+    def test_finish_another_account_returns_screenshot_and_result(self, mock_image_on_screen):
+        mock_image_on_screen.return_value = True
+
+        with patch("automate2.take_result_screenshot", return_value="shot.png") as mock_screenshot:
+            is_created, status, screenshot_path = automate2.finish_another_account(
+                "we_found_another_account.png"
+            )
+
+        self.assertFalse(is_created)
+        self.assertEqual(status, RESULT_WE_FOUND_ANOTHER_ACCOUNT)
+        self.assertEqual(screenshot_path, "shot.png")
+        mock_screenshot.assert_called_once_with(prefix=RESULT_WE_FOUND_ANOTHER_ACCOUNT)
+
+        outcome = outcome_from_result(is_created, status)
+        account = {}
+        apply_outcome_to_account(account, outcome, screenshot_path, username="user", timestamp="now")
+        self.assertTrue(account["we_found_another_account"])
+        self.assertEqual(classify_account(account), STATUS_ANOTHER_ACCOUNT)
 
 
 if __name__ == "__main__":

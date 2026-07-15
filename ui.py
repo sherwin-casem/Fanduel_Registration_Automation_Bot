@@ -836,7 +836,7 @@ class AutoUI:
                             self.status_lbl.config(text=f"Running: {e} ({c}/{t})", fg="#0056b3"))
             
             try:
-                is_created, status = automate2.main(current_config, url, proxy)
+                is_created, status, captured_screenshot = automate2.main(current_config, url, proxy)
                 outcome = outcome_from_result(is_created, status)
             except Exception as e:
                 if self.stop_requested:
@@ -844,9 +844,10 @@ class AutoUI:
                     break
                     
                 outcome = outcome_from_exception(e)
+                captured_screenshot = None
                 logger.exception("Automation failed for %s", email)
                 
-            screenshot_path = automate2.take_result_screenshot(outcome.screenshot_prefix)
+            screenshot_path = captured_screenshot or automate2.take_result_screenshot(outcome.screenshot_prefix)
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             apply_outcome_to_account(
                 acc,
@@ -857,7 +858,14 @@ class AutoUI:
             )
             
             self.save_accounts()
-            logger.info("Account finished: email=%s success=%s created=%s reason=%s", email, outcome.success, outcome.created, outcome.reason)
+            logger.info(
+                "Account finished: email=%s success=%s created=%s another_account=%s reason=%s",
+                email,
+                outcome.success,
+                outcome.created,
+                outcome.we_found_another_account,
+                outcome.reason,
+            )
             self.root.after(0, self.refresh_lists)
             
             # Close browser

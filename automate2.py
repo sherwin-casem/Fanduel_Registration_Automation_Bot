@@ -294,26 +294,36 @@ SUCCESS_ONBOARDING_IMAGES = (
 
 def detect_another_account_screen():
     """Detect duplicate-account screens from any distinctive UI element."""
-    matched, confidence = find_matching_image(
-        ANOTHER_ACCOUNT_IMAGES[:2],
+    return find_matching_image(
+        ANOTHER_ACCOUNT_IMAGES,
         POST_VERIFY_FAILURE_CONFIDENCES,
     )
-    if matched:
-        return matched, confidence
 
-    secondary_matches = []
-    for image_name in ANOTHER_ACCOUNT_IMAGES[2:]:
-        match, match_confidence = find_matching_image(
-            (image_name,),
-            POST_VERIFY_FAILURE_CONFIDENCES[:3],
+
+def finish_another_account(matched_image=None):
+    """Stop the run, capture proof, and return the another-account result."""
+    if matched_image:
+        print(
+            f"'We found another account' screen detected via {matched_image}. "
+            "Taking screenshot and ending."
         )
-        if match:
-            secondary_matches.append((match, match_confidence))
+    else:
+        print("'We found another account' screen detected. Taking screenshot and ending.")
 
-    if len(secondary_matches) >= 2:
-        return secondary_matches[0][0], secondary_matches[0][1]
+    screenshot_path = take_result_screenshot(prefix=RESULT_WE_FOUND_ANOTHER_ACCOUNT)
+    print("Automation finished for this account due to finding another account.")
+    return False, RESULT_WE_FOUND_ANOTHER_ACCOUNT, screenshot_path
 
-    return None, None
+
+def check_for_another_account_during_wait(label=""):
+    """Return the terminal result tuple when a duplicate-account screen appears."""
+    matched_image, confidence = detect_another_account_screen()
+    if not matched_image:
+        return None
+
+    if label:
+        print(f"Another account detected {label} via {matched_image} (confidence={confidence}).")
+    return finish_another_account(matched_image)
 
 
 def detect_post_verify_outcome():
@@ -468,6 +478,10 @@ WELCOME_CONTINUE_COORDS = (682, 340)
 WELCOME_SCROLL_AMOUNT = -500
 ONBOARDING_CONTINUE_COORDS = (665, 600)
 ONBOARDING_SCROLL_AMOUNT = -200
+EMAIL_FIELD_ALBERTA_COORDS = (519, 481)
+EMAIL_CONTINUE_ALBERTA_COORDS = (666, 542)
+EMAIL_FIELD_DEFAULT_COORDS = (519, 400)
+EMAIL_CONTINUE_DEFAULT_COORDS = (666, 460)
 PROXY_DIALOG_WAIT_SECONDS = 4
 PROXY_DIALOG_DETECT_TIMEOUT = 5
 PROXY_DIALOG_RETRY_TIMEOUT = 5
@@ -579,11 +593,18 @@ def main(config, url, proxy=None):
     # take_screenshot()
 
     # 2. Email field
-    # Try image first, fallback to coordinates
-    
-    
+    # Try email1.png first; fallback coordinates depend on live_in_alberta.png.
+    if image_on_screen("live_in_alberta.png"):
+        email_fallback_coords = EMAIL_FIELD_ALBERTA_COORDS
+        continue_fallback_coords = EMAIL_CONTINUE_ALBERTA_COORDS
+        print("Live in Alberta screen detected; using Alberta email/continue coordinates.")
+    else:
+        email_fallback_coords = EMAIL_FIELD_DEFAULT_COORDS
+        continue_fallback_coords = EMAIL_CONTINUE_DEFAULT_COORDS
+        print("Standard email screen detected; using default email/continue coordinates.")
+
     if not human_click_image("email1.png"):
-        if not human_click_coords(519, 481):
+        if not human_click_coords(*email_fallback_coords):
             raise AutomationError("Email field not found - image and coordinates both failed.")
         time.sleep(5)
 
@@ -596,8 +617,9 @@ def main(config, url, proxy=None):
     time.sleep(5)
 
     # 3. Continue button
-    if not human_click_coords(666, 542):
-        raise AutomationError("Continue button not found.")
+    if not human_click_image("continue.png"):
+        if not human_click_coords(*continue_fallback_coords):
+            raise AutomationError("Continue button not found.")
     random_delay(5, 8)
     check_stop()
     time.sleep(5)
@@ -669,8 +691,8 @@ def main(config, url, proxy=None):
 
     if service_unavailable:
         print("Service not available page detected. Ending for this account.")
-        take_result_screenshot(prefix="service_not_available")
-        return False, RESULT_SERVICE_NOT_AVAILABLE
+        screenshot_path = take_result_screenshot(prefix="service_not_available")
+        return False, RESULT_SERVICE_NOT_AVAILABLE, screenshot_path
         
     random_delay(2, 4)
     time.sleep(3)
@@ -881,9 +903,18 @@ def main(config, url, proxy=None):
             continue
 
         print("Waiting for page to advance after verify...")
-        time.sleep(15)
-        if not on_job_signature_page():
-            print("Left job/signature page after verify.")
+        left_job_page = False
+        for _ in range(30):
+            check_stop()
+            another_account_result = check_for_another_account_during_wait("after verify")
+            if another_account_result:
+                return another_account_result
+            if not on_job_signature_page():
+                print("Left job/signature page after verify.")
+                left_job_page = True
+                break
+            time.sleep(0.5)
+        if left_job_page:
             break
         print("Still on job/signature page after verify; retrying...")
     else:
@@ -896,29 +927,36 @@ def main(config, url, proxy=None):
 
     if post_verify_outcome == RESULT_UNABLE_TO_VERIFY:
         print("'We couldn't verify your data' screen detected. Taking screenshot and ending.")
-        take_result_screenshot(prefix="unable_to_verify")
+        screenshot_path = take_result_screenshot(prefix="unable_to_verify")
         print("Automation finished for this account due to verification failure.")
-        return False, RESULT_UNABLE_TO_VERIFY
+        return False, RESULT_UNABLE_TO_VERIFY, screenshot_path
 
     if post_verify_outcome == RESULT_WE_FOUND_ANOTHER_ACCOUNT:
-        print("'We found another account' screen detected. Taking screenshot and ending.")
-        take_result_screenshot(prefix="we_found_another_account")
-        print("Automation finished for this account due to finding another account.")
-        return False, RESULT_WE_FOUND_ANOTHER_ACCOUNT
+        matched_image, _confidence = detect_another_account_screen()
+        return finish_another_account(matched_image)
 
     if post_verify_outcome != RESULT_CREATED:
         print(
             "No known post-verify screen detected after waiting. "
             "Taking screenshot and ending without creating account."
         )
-        take_result_screenshot(prefix="post_verify_unknown")
-        return False, RESULT_SUCCESS_NOT_CREATED
+        screenshot_path = take_result_screenshot(prefix="post_verify_unknown")
+        return False, RESULT_SUCCESS_NOT_CREATED, screenshot_path
+
+    another_account_result = check_for_another_account_during_wait("before welcome onboarding")
+    if another_account_result:
+        return another_account_result
 
     print("Proceeding with welcome onboarding after job/signature page...")
     time.sleep(5)
     complete_welcome_onboarding()
+
+    another_account_result = check_for_another_account_during_wait("after welcome onboarding")
+    if another_account_result:
+        return another_account_result
+
     print("Automation finished for this account.")
-    return True, RESULT_CREATED
+    return True, RESULT_CREATED, None
 
 def take_result_screenshot(prefix="result"):
     """Takes a screenshot and saves it to a dated folder inside images_result."""
@@ -980,16 +1018,17 @@ def run_all_accounts():
             time.sleep(wait_time)
                 
         try:
-            is_created, status = main(current_config, url, proxy)
+            is_created, status, captured_screenshot = main(current_config, url, proxy)
             outcome = outcome_from_result(is_created, status)
                 
         except Exception as e:
             outcome = outcome_from_exception(e)
+            captured_screenshot = None
             print(f"Error encountered: {outcome.reason}")
             print("Waiting 2 minutes before closing browser due to error...")
             time.sleep(120)
 
-        screenshot_path = take_result_screenshot(outcome.screenshot_prefix)
+        screenshot_path = captured_screenshot or take_result_screenshot(outcome.screenshot_prefix)
         apply_outcome_to_account(
             account_data,
             outcome,
