@@ -32,11 +32,6 @@ def copy_if_missing(source, target):
 
 
 def env_lines_from_settings(settings):
-    referrals = [
-        referral.get("url", "")
-        for referral in settings.get("referrals", [])
-        if referral.get("url")
-    ]
     proxies = []
     for proxy in settings.get("proxies", []):
         host = str(proxy.get("host", "")).strip()
@@ -48,13 +43,10 @@ def env_lines_from_settings(settings):
 
     first_proxy = settings.get("proxies", [{}])[0] if settings.get("proxies") else {}
     edge_path = settings.get("edge_path", "")
-    referral_mode = settings.get("referral_mode", "rotate")
 
     return [
         "# Local developer overrides. This file is ignored by git.",
         f"FUNDREL_EDGE_PATH={edge_path}",
-        f"FUNDREL_REFERRALS={','.join(referrals)}",
-        f"FUNDREL_REFERRAL_MODE={referral_mode}",
         f"FUNDREL_PROXIES={','.join(proxies)}",
         f"FUNDREL_PROXY_SERVER=http://{first_proxy.get('host', 'proxy.example.com')}:{first_proxy.get('port', '10001')}",
         f"FUNDREL_PROXY_HOST={first_proxy.get('host', 'proxy.example.com')}",
@@ -94,9 +86,8 @@ def sync_env(_args):
     settings = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
     ENV_PATH.write_text("\n".join(env_lines_from_settings(settings)), encoding="utf-8")
 
-    referral_count = len(settings.get("referrals", []))
     proxy_count = len(settings.get("proxies", []))
-    print(f"Updated .env from data/settings.json ({referral_count} referrals, {proxy_count} proxies).")
+    print(f"Updated .env from data/settings.json ({proxy_count} proxies).")
     return 0
 
 
@@ -146,7 +137,6 @@ def smoke(_args):
     checks = [
         ("automation module imports", True),
         ("ui module imports", True),
-        ("data/settings.json has referrals", len(settings.get("referrals", [])) > 0),
         ("data/settings.json has proxies", len(settings.get("proxies", [])) > 0),
         ("data/accounts.json has accounts", len(accounts) > 0),
         ("Edge path exists", edge_path.exists()),
@@ -162,7 +152,7 @@ def smoke(_args):
 
     if accounts:
         url, proxy, wait = select_url_and_proxy(copy.deepcopy(settings), accounts[0])
-        checks.append(("routing returns referral URL", bool(url)))
+        checks.append(("routing returns homepage URL", bool(url)))
         checks.append(("routing returns proxy", proxy is not None))
         checks.append(("routing wait is numeric", isinstance(wait, (int, float))))
 

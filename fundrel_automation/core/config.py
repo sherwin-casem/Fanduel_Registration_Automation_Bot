@@ -5,22 +5,17 @@ from copy import deepcopy
 from .env import load_env, split_env_list
 from .paths import LEGACY_SETTINGS_PATH, SETTINGS_PATH
 
+LEGACY_SETTING_KEYS = (
+    "urls",
+    "referrals",
+    "referral_mode",
+    "referral_state",
+    "url_index",
+    "proxy_index",
+)
 
 DEFAULT_SETTINGS = {
     "edge_path": r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-    "referrals": [
-        {
-            "url": "https://fndl.co/ohhanft",
-            "enabled": True,
-            "percentage": 100,
-        }
-    ],
-    "referral_mode": "rotate",
-    "referral_state": {
-        "index": 0,
-        "start_time": 0,
-        "random_bag": [],
-    },
     "proxies": [],
 }
 
@@ -28,19 +23,12 @@ DEFAULT_SETTINGS = {
 def _migrate_settings(settings):
     changed = False
 
-    if "urls" in settings and "referrals" not in settings:
-        settings["referrals"] = [
-            {"url": url, "enabled": True, "percentage": 100}
-            for url in settings["urls"]
-        ]
-        settings["referral_mode"] = "rotate"
-        settings["referral_state"] = {"index": 0, "start_time": 0, "random_bag": []}
-        changed = True
+    for key in LEGACY_SETTING_KEYS:
+        if key in settings:
+            del settings[key]
+            changed = True
 
-    settings.setdefault("referrals", [])
     settings.setdefault("proxies", [])
-    settings.setdefault("referral_mode", "rotate")
-    settings.setdefault("referral_state", {"index": 0, "start_time": 0, "random_bag": []})
     settings.setdefault("edge_path", DEFAULT_SETTINGS["edge_path"])
 
     return settings, changed
@@ -54,17 +42,6 @@ def settings_from_env(env=None):
     if edge_path:
         settings["edge_path"] = edge_path
 
-    referral_mode = env.get("FUNDREL_REFERRAL_MODE")
-    if referral_mode:
-        settings["referral_mode"] = referral_mode
-
-    referrals = split_env_list(env.get("FUNDREL_REFERRALS", ""))
-    if referrals:
-        settings["referrals"] = [
-            {"url": url, "enabled": True, "percentage": 100}
-            for url in referrals
-        ]
-
     proxies = split_env_list(env.get("FUNDREL_PROXIES", ""))
     if proxies:
         settings["proxies"] = [_proxy_from_string(proxy) for proxy in proxies]
@@ -77,12 +54,8 @@ def apply_env_defaults(settings, env=None):
 
     if settings.get("edge_path") == DEFAULT_SETTINGS["edge_path"]:
         settings["edge_path"] = env_settings["edge_path"]
-    if not settings.get("referrals"):
-        settings["referrals"] = env_settings["referrals"]
     if not settings.get("proxies"):
         settings["proxies"] = env_settings["proxies"]
-    if settings.get("referral_mode") == DEFAULT_SETTINGS["referral_mode"]:
-        settings["referral_mode"] = env_settings["referral_mode"]
 
     return settings
 
@@ -111,39 +84,6 @@ def save_settings(settings, path=SETTINGS_PATH):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
         json.dump(settings, f, indent=4)
-
-
-def parse_referrals(raw):
-    raw = raw.strip()
-    referrals = []
-    if not raw:
-        return referrals
-
-    try:
-        parsed = json.loads(raw)
-        if not isinstance(parsed, list):
-            raise ValueError("Referrals JSON must be a list.")
-
-        for item in parsed:
-            if isinstance(item, dict):
-                referrals.append(item)
-            elif isinstance(item, str):
-                referrals.append({"url": item, "enabled": True, "percentage": 100})
-        return referrals
-    except Exception as exc:
-        if "{" in raw:
-            raise ValueError(
-                "Referrals format is invalid. If mixing JSON and plain text, "
-                f"ensure it's a valid JSON array.\nError: {exc}"
-            ) from exc
-
-    clean_ref = raw.strip("[]")
-    for item in re.split(r"[\n,]+", clean_ref):
-        item = item.strip().strip("'\"")
-        if item:
-            referrals.append({"url": item, "enabled": True, "percentage": 100})
-
-    return referrals
 
 
 def _proxy_from_string(value):

@@ -14,8 +14,6 @@
         "address": "123 Example Street",
         "city": "Toronto",
         "province": "ON",
-        "postcode": "A1A 1A1",
-        "referral_url": ""
+        "postcode": "A1A 1A1"
     }
 ]
-

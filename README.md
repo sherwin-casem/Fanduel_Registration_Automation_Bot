@@ -1,7 +1,7 @@
 ﻿# FanDuel AutoBot Dashboard
 
 ## Overview
-This desktop app manages account records, settings, and browser automation runs from a Tkinter UI. It supports importing accounts, configuring referrals/proxies, running pending accounts, and saving screenshots/results for each run.
+This desktop app manages account records, settings, and browser automation runs from a Tkinter UI. It supports importing accounts, configuring proxies, running pending accounts, and saving screenshots/results for each run.
 
 ## Features
 - Full automation runner for account registration flow
@@ -9,7 +9,7 @@ This desktop app manages account records, settings, and browser automation runs 
 - JSON, CSV, and Excel export
 - Date filtering for run history
 - Send failed/unverified accounts back to Pending
-- Configurable referrals, referral selection modes, proxies, and Edge path
+- Configurable proxies and Edge path
 - Screenshot capture for completed/error runs
 
 ## Installation
@@ -66,7 +66,7 @@ The log file rotates automatically so it does not grow forever.
 ## Project Data
 
 - `data/accounts.json`: local account data. Not committed.
-- `data/settings.json`: local settings, referrals, and proxies. Not committed.
+- `data/settings.json`: local settings and proxies. Not committed.
 - `.env`: local developer overrides. Not committed.
 - `.env.example`: safe template for `.env`.
 - Use `python dev.py sync-env` after editing settings in the UI if you want `.env` to mirror `data/settings.json`.
@@ -86,7 +86,7 @@ The executable will be created in `dist/`.
 
 ## Configuration
 
-- Open Settings in the UI to configure Edge path, referrals, referral mode, and proxies.
+- Open Settings in the UI to configure Edge path and proxies.
 - Keep image target files such as `email1.png` and `create_account.png` in `assets/image_targets`.
 - Upload account data from JSON or Excel, or add accounts manually.
 

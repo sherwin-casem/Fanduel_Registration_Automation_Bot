@@ -52,19 +52,11 @@ If you **Right-Click** on any account in the list, a secret menu pops up with mo
 ---
 
 ## 5. The Settings Menu (⚙ Settings)
-When you click the yellow Settings button, you will see three tabs:
+When you click the yellow Settings button, you will see two tabs:
 
 * **General**: 
-  * **Referral Mode**: Choose how the bot picks which referral link to use. You can have it rotate one-by-one, stick to one link for 60 minutes, mix them randomly, or use percentages.
   * **Edge Browser Path**: The location of Microsoft Edge on your computer. Usually, you don't need to touch this.
-* **Referrals**: Paste your referral links here. Make sure to wrap them in double quotes! **When adding (appending) new links to your existing list, you MUST put a comma `,` after the previous one.** Example:
-  ```
-  "www.previous.com",
-  "www.new-a.com",
-  "www.new-b.com"
-  ```
-  *(Note: It is okay if you use square brackets `[]` around them, or paste them one per line, as long as the quotes and commas are there!)*
-* **Proxies**: Paste your proxies here to hide your IP address. Wrap them in quotes as well. **Just like referrals, remember to add a comma `,` after the previous proxy when appending new ones.** Format: `"host:port:username:password"`. Example:
+* **Proxies**: Paste your proxies here to hide your IP address. Wrap them in quotes. **When appending new proxies, remember to add a comma `,` after the previous one.** Format: `"host:port:username:password"`. Example:
   ```
   "192.168.1.1:8080:myuser:mypassword",
   "192.168.1.2:8080:myuser:mypassword"

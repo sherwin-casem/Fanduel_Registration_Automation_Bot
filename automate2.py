@@ -131,15 +131,6 @@ def launch_chrome_with_proxy(url, proxy=None):
     print("Waiting for browser to start...")
     time.sleep(3)
 
-    if proxy:
-        # Fill the proxy auth popup
-        pyautogui.typewrite(proxy['user'], interval=0.02)
-        pyautogui.press("tab")
-        pyautogui.typewrite(proxy['pass'], interval=0.02)
-        pyautogui.press("enter")
-
-    time.sleep(5)  # wait for page to load
-
 def wait_for_image(image_path, timeout=15, confidence=0.8):
     image_path = str(asset_path(image_path))
     start = time.time()
@@ -261,6 +252,306 @@ def image_on_screen(image_path, confidence=0.8):
     except Exception:
         return False
 
+
+def find_matching_image(image_names, confidences=(0.8, 0.7, 0.6)):
+    """Return the first visible image name and confidence used, or (None, None)."""
+    for image_name in image_names:
+        for confidence in confidences:
+            if image_on_screen(image_name, confidence=confidence):
+                return image_name, confidence
+    return None, None
+
+
+def screen_has_any_image(image_names, confidences=(0.8, 0.7, 0.6)):
+    """Return the first matching image name visible on screen, or None."""
+    image_name, _confidence = find_matching_image(image_names, confidences)
+    return image_name
+
+
+POST_VERIFY_TIMEOUT = 60
+POST_VERIFY_POLL_INTERVAL = 0.5
+POST_VERIFY_FAILURE_CONFIDENCES = (0.85, 0.8, 0.75, 0.7, 0.65)
+POST_VERIFY_SUCCESS_CONFIDENCES = (0.85, 0.8, 0.75, 0.7)
+
+ANOTHER_ACCOUNT_IMAGES = (
+    "already_verified_account.png",
+    "we_found_another_account.png",
+    "masked_account_email.png",
+    "login_to_your_account.png",
+    "reset_my_password.png",
+)
+UNABLE_TO_VERIFY_IMAGES = (
+    "we_couldnt_verify_your_data1.png",
+    "we_couldnt_verify_your_data.png",
+)
+SUCCESS_ONBOARDING_IMAGES = (
+    "youre_in.png",
+    "success.png",
+    "continue.png",
+    "continue1.png",
+)
+
+
+def detect_another_account_screen():
+    """Detect duplicate-account screens from any distinctive UI element."""
+    matched, confidence = find_matching_image(
+        ANOTHER_ACCOUNT_IMAGES[:2],
+        POST_VERIFY_FAILURE_CONFIDENCES,
+    )
+    if matched:
+        return matched, confidence
+
+    secondary_matches = []
+    for image_name in ANOTHER_ACCOUNT_IMAGES[2:]:
+        match, match_confidence = find_matching_image(
+            (image_name,),
+            POST_VERIFY_FAILURE_CONFIDENCES[:3],
+        )
+        if match:
+            secondary_matches.append((match, match_confidence))
+
+    if len(secondary_matches) >= 2:
+        return secondary_matches[0][0], secondary_matches[0][1]
+
+    return None, None
+
+
+def detect_post_verify_outcome():
+    """Classify the current screen after identity verification."""
+    another_account_image, confidence = detect_another_account_screen()
+    if another_account_image:
+        print(
+            f"Another account screen detected via {another_account_image} "
+            f"(confidence={confidence})."
+        )
+        return RESULT_WE_FOUND_ANOTHER_ACCOUNT
+
+    unable_to_verify_image, confidence = find_matching_image(
+        UNABLE_TO_VERIFY_IMAGES,
+        POST_VERIFY_FAILURE_CONFIDENCES,
+    )
+    if unable_to_verify_image:
+        print(
+            f"Unable to verify screen detected via {unable_to_verify_image} "
+            f"(confidence={confidence})."
+        )
+        return RESULT_UNABLE_TO_VERIFY
+
+    success_image, confidence = find_matching_image(
+        SUCCESS_ONBOARDING_IMAGES,
+        POST_VERIFY_SUCCESS_CONFIDENCES,
+    )
+    if success_image:
+        print(
+            f"Welcome onboarding screen detected via {success_image} "
+            f"(confidence={confidence})."
+        )
+        return RESULT_CREATED
+
+    return None
+
+
+def wait_for_post_verify_outcome(timeout=POST_VERIFY_TIMEOUT):
+    """Wait for a known post-verify outcome; failure screens take priority."""
+    print(
+        "Waiting for success, 'another account', or 'unable to verify' screen "
+        f"(up to {timeout}s)..."
+    )
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        outcome = detect_post_verify_outcome()
+        if outcome:
+            return outcome
+        time.sleep(POST_VERIFY_POLL_INTERVAL)
+    return None
+
+
+def format_signature(config):
+    """Match FanDuel's expected first + last name casing in the signature field."""
+    first = (config.get("firstName") or "").strip().title()
+    last = (config.get("lastName") or "").strip().title()
+    return f"{first} {last}"
+
+
+def on_job_signature_page():
+    return screen_has_any_image(
+        ["verify_identity_button.png", "job_field.png"],
+        confidences=(0.75, 0.65, 0.55),
+    )
+
+
+def scroll_job_signature_page(clicks=2, amount=-200):
+    """Focus the join modal and scroll its content down."""
+    human_click_coords(*JOB_MODAL_FOCUS_COORDS)
+    time.sleep(0.3)
+    for _ in range(clicks):
+        check_stop()
+        pyautogui.scroll(amount)
+        time.sleep(0.3)
+
+
+def click_info_correct_checkbox():
+    """Always confirm the registration accuracy checkbox."""
+    if human_click_image("info_correct_checkbox.png"):
+        print("Info correct checkbox clicked via image.")
+        return True
+
+    if human_click_coords(*INFO_CORRECT_CHECKBOX_COORDS):
+        print(f"Info correct checkbox clicked at {INFO_CORRECT_CHECKBOX_COORDS}.")
+        return True
+
+    print("Info correct checkbox click failed.")
+    return False
+
+
+def click_verify_identity_button():
+    """Click the verify identity button by image or fixed coordinates."""
+    if human_click_image("verify_identity_button.png"):
+        print("Verify identity button clicked via image.")
+        return True
+
+    if human_click_coords(*VERIFY_IDENTITY_BUTTON_COORDS):
+        print(f"Verify identity button clicked at {VERIFY_IDENTITY_BUTTON_COORDS}.")
+        return True
+
+    print("Verify identity button click failed.")
+    return False
+
+
+def complete_welcome_onboarding():
+    """Finish account creation through welcome, terms, and payment pages via coordinates."""
+    print("Starting welcome onboarding flow...")
+
+    print("Welcome page: clicking focus point...")
+    human_click_coords(*WELCOME_FOCUS_COORDS)
+    time.sleep(1)
+
+    print("Welcome page: scrolling down...")
+    check_stop()
+    pyautogui.scroll(WELCOME_SCROLL_AMOUNT)
+    time.sleep(2)
+
+    print("Welcome page: clicking continue...")
+    human_click_coords(*WELCOME_CONTINUE_COORDS)
+    time.sleep(5)
+
+    print("Next page: scrolling down...")
+    check_stop()
+    pyautogui.scroll(ONBOARDING_SCROLL_AMOUNT)
+    time.sleep(2)
+
+    print("Next page: clicking continue...")
+    human_click_coords(*ONBOARDING_CONTINUE_COORDS)
+    time.sleep(5)
+
+    print("Payment page: scrolling down...")
+    check_stop()
+    pyautogui.scroll(ONBOARDING_SCROLL_AMOUNT)
+    time.sleep(2)
+
+    print("Payment page: clicking continue...")
+    human_click_coords(*ONBOARDING_CONTINUE_COORDS)
+    time.sleep(5)
+
+    print("Welcome onboarding flow complete.")
+
+
+PROXY_USERNAME_COORDS = (557, 221)
+PROXY_PASSWORD_COORDS = (563, 266)
+PROXY_SIGN_IN_COORDS = (793, 333)
+SIGNATURE_FIELD_COORDS = (510, 612)
+INFO_CORRECT_CHECKBOX_COORDS = (510, 223)
+VERIFY_IDENTITY_BUTTON_COORDS = (662, 410)
+JOB_MODAL_FOCUS_COORDS = (683, 400)
+WELCOME_FOCUS_COORDS = (512, 450)
+WELCOME_CONTINUE_COORDS = (682, 340)
+WELCOME_SCROLL_AMOUNT = -500
+ONBOARDING_CONTINUE_COORDS = (665, 600)
+ONBOARDING_SCROLL_AMOUNT = -200
+PROXY_DIALOG_WAIT_SECONDS = 4
+PROXY_DIALOG_DETECT_TIMEOUT = 5
+PROXY_DIALOG_RETRY_TIMEOUT = 5
+PROXY_DIALOG_POLL_CONFIDENCE = 0.75
+PROXY_DIALOG_CLEAR_TIMEOUT = 5
+PROXY_POST_AUTH_WAIT_SECONDS = 5
+PROXY_AUTH_MAX_ATTEMPTS = 3
+
+
+def proxy_dialog_on_screen(confidence=PROXY_DIALOG_POLL_CONFIDENCE):
+    return image_on_screen("proxy_sign_in.png", confidence=confidence)
+
+
+def wait_for_proxy_dialog(timeout=PROXY_DIALOG_DETECT_TIMEOUT, confidence=PROXY_DIALOG_POLL_CONFIDENCE):
+    """Poll until the Edge proxy sign-in dialog header is visible."""
+    print(f"Waiting up to {timeout}s for proxy dialog...")
+    if wait_for_image("proxy_sign_in.png", timeout=timeout, confidence=confidence):
+        print("Proxy dialog detected.")
+        return True
+    print("Proxy dialog not detected via image matching.")
+    return False
+
+
+def wait_for_proxy_dialog_cleared(timeout=PROXY_DIALOG_CLEAR_TIMEOUT, confidence=PROXY_DIALOG_POLL_CONFIDENCE):
+    """Poll until the proxy sign-in dialog is no longer visible."""
+    print(f"Waiting up to {timeout}s for proxy dialog to clear...")
+    start = time.time()
+    while time.time() - start < timeout:
+        check_stop()
+        if not proxy_dialog_on_screen(confidence):
+            print("Proxy dialog cleared.")
+            return True
+        time.sleep(0.5)
+    print("Proxy dialog still visible.")
+    return False
+
+
+def _fill_proxy_credentials(proxy):
+    human_click_coords(*PROXY_USERNAME_COORDS)
+    time.sleep(0.5)
+    clear_and_type(proxy["user"], backspace_count=max(len(proxy["user"]), 20) + 10)
+
+    check_stop()
+    human_click_coords(*PROXY_PASSWORD_COORDS)
+    time.sleep(0.5)
+    clear_and_type(proxy["pass"], backspace_count=max(len(proxy["pass"]), 20) + 10)
+
+    check_stop()
+    human_click_coords(*PROXY_SIGN_IN_COORDS)
+
+
+def authenticate_proxy(proxy, max_attempts=PROXY_AUTH_MAX_ATTEMPTS):
+    """Fill Edge HTTP proxy credentials; wait for dialog before each attempt."""
+    for attempt in range(1, max_attempts + 1):
+        check_stop()
+        print(f"Proxy authentication attempt {attempt}/{max_attempts}")
+
+        if attempt == 1:
+            dialog_visible = wait_for_proxy_dialog()
+            if not dialog_visible:
+                print(
+                    f"Falling back to {PROXY_DIALOG_WAIT_SECONDS}s fixed wait before coordinate entry..."
+                )
+                time.sleep(PROXY_DIALOG_WAIT_SECONDS)
+        else:
+            if not wait_for_proxy_dialog(timeout=PROXY_DIALOG_RETRY_TIMEOUT):
+                print("Proxy dialog no longer visible; authentication complete.")
+                return
+            print("Proxy dialog visible again; retrying credential entry.")
+
+        _fill_proxy_credentials(proxy)
+        print("Submitted proxy credentials.")
+        time.sleep(PROXY_POST_AUTH_WAIT_SECONDS)
+
+        if wait_for_proxy_dialog_cleared():
+            print("Proxy authentication complete.")
+            return
+
+        if attempt < max_attempts:
+            print("Proxy dialog still present; preparing another attempt...")
+
+    print("Proxy authentication complete (exhausted attempts).")
+
+
 # ------------------------------------------------------------
 # MAIN AUTOMATION FLOW (using image recognition)
 # ------------------------------------------------------------
@@ -269,45 +560,20 @@ def main(config, url, proxy=None):
     check_stop()
     launch_chrome_with_proxy(url, proxy)
 
-    # Wait for page to settle
-    random_delay(5, 8)
-    check_stop()
-    time.sleep(10)
-    
     if proxy:
-        # 0. Click sign in to proxy
-        human_click_coords(793, 333)
-        # Check whether the dialog/modal appeared again
-        dialog = wait_for_image("proxy_sign_in.png", timeout=15, confidence=0.8)
-
-        if dialog:
-            print("Proxy dialog appeared again. Manual/approved recovery needed.")
-            # For legitimate internal apps, this is where you would handle retry safely.
-            # click the proxy username input field
-            human_click_coords(557, 221)
-            human_type(proxy['user'])
-            check_stop()
-            time.sleep(3)
-            # click the proxy password input field
-            human_click_coords(563, 266)
-            human_type(proxy['pass'])
-            check_stop()
-            time.sleep(3)
-            # click the sign in button
-            human_click_coords(793, 333)
-            # time.sleep(15)
-        else:
-            print("No proxy dialog detected. Continue workflow.")
-        check_stop()
-        time.sleep(15)
+        authenticate_proxy(proxy)
     else:
-        print("No proxy provided. Continue workflow.")
-        check_stop()
+        print("No proxy provided. Waiting for page to load...")
         time.sleep(10)
-    # 1. Click Ontario button (image: ontario_button.png)
-    if not human_click_coords(659, 462):
-        raise AutomationError("Ontario button not found.")
-    random_delay(4, 6)
+
+    check_stop()
+    print("Waiting for homepage to load...")
+    time.sleep(30)
+    # 1. Click Join button (image: join_button.png)
+    if not human_click_image("join_button.png"):
+        if not human_click_coords(1262, 148):
+            raise AutomationError("Join button not found - image and coordinates both failed.")
+    random_delay(15, 20)
     check_stop()
     time.sleep(25)
     # take_screenshot()
@@ -317,9 +583,9 @@ def main(config, url, proxy=None):
     
     
     if not human_click_image("email1.png"):
-        if not human_click_coords(519, 386):
+        if not human_click_coords(519, 481):
             raise AutomationError("Email field not found - image and coordinates both failed.")
-        time.sleep(3)
+        time.sleep(5)
 
     # Type email (reached here means one of them worked)
     check_stop()
@@ -327,10 +593,10 @@ def main(config, url, proxy=None):
     human_type(config["email"])
     print(f"Typed email: {config['email']}")
     check_stop()
-    time.sleep(3)
+    time.sleep(5)
 
     # 3. Continue button
-    if not human_click_coords(666, 455):
+    if not human_click_coords(666, 542):
         raise AutomationError("Continue button not found.")
     random_delay(5, 8)
     check_stop()
@@ -349,7 +615,7 @@ def main(config, url, proxy=None):
     time.sleep(5)
     # human_click_coords(597, 508)
     if not human_click_image("username1.png"):
-        if not human_click_coords(597, 508):
+        if not human_click_coords(505, 591):
             raise AutomationError("Username field not found - image and coordinates both failed.")
         time.sleep(3)
 
@@ -363,7 +629,7 @@ def main(config, url, proxy=None):
 
     # 5. Password field
     check_stop()
-    if human_click_coords(643, 569):
+    if human_click_coords(505, 660):
         human_type(config["password"])
         print(f"Typed password: {config['password']}")
         check_stop()
@@ -371,16 +637,20 @@ def main(config, url, proxy=None):
         # take_screenshot()
     else:
         raise AutomationError("Password field not found.")
-    # --- SCROLL BEFORE CREATE ACCOUNT ---
-    print("Scrolling to reveal Create Account button...")
-    check_stop()
-    pyautogui.scroll(-5)
+
+    for _ in range(10):
+        if image_on_screen("create_account.png", confidence=0.8):
+            print("Create Account button visible.")
+            break
+        pyautogui.scroll(-200)
+        time.sleep(1)
     check_stop()
     time.sleep(1.5)
 
     # 6. Create Account button (submit)
     if not human_click_image("create_account.png"):
-        raise AutomationError("Create Account button not found.")
+        if not human_click_coords(670, 470):
+            raise AutomationError("Create Account button not found.")
     
     print("Waiting to see if 'service not available' appears...")
     start_wait = time.time()
@@ -395,7 +665,7 @@ def main(config, url, proxy=None):
         if image_on_screen("firstname_field.png", confidence=0.8):
             break
             
-        time.sleep(1)
+        time.sleep(3)
 
     if service_unavailable:
         print("Service not available page detected. Ending for this account.")
@@ -403,32 +673,36 @@ def main(config, url, proxy=None):
         return False, RESULT_SERVICE_NOT_AVAILABLE
         
     random_delay(2, 4)
-    time.sleep(2)
+    time.sleep(3)
 
     # 7. Now on Name page – fill first name, last name
     for attempt in range(2):
         print(f"Name Page - Attempt {attempt + 1}")
         
-        click_image_or_coord("firstname_field.png", 629, 493)
+        click_image_or_coord("firstname_field.png", 510, 470)
         clear_and_type(config["firstName"], len(config["firstName"]) + 10)
         print(f"Typed first name: {config['firstName']}")
         time.sleep(2)
         
         if config["middleName"]:
-            click_image_or_coord("middlename_field.png", 642, 588)
+            click_image_or_coord("middlename_field.png", 510, 550)
             clear_and_type(config["middleName"], len(config["middleName"]) + 10)
             print(f"Typed middle name: {config['middleName']}")
             time.sleep(2)
             
-        click_image_or_coord("lastname_field.png", 659, 667)
+        click_image_or_coord("lastname_field.png", 510, 640)
         clear_and_type(config["lastName"], len(config["lastName"]) + 10)
         print(f"Typed last name: {config['lastName']}")
         time.sleep(2)
         
         random_delay(2, 4)
         if not human_click_image("next_btn.png"):
-            print("Next button not found.")
-            pyautogui.press("enter")
+            if not human_click_coords(670, 700):
+                raise AutomationError("Next button not found.")
+
+        print("Clicking verification window...")
+        time.sleep(5)
+        human_click_coords(670, 560)
             
         random_delay(5, 8)
         
@@ -443,64 +717,66 @@ def main(config, url, proxy=None):
     # 8. DOB & Phone page
     for attempt in range(2):
         print(f"DOB & Phone Page - Attempt {attempt + 1}")
-        
+
+        print("Scrolling down on DOB page...")
+        check_stop()
+        pyautogui.scroll(-200)
+        time.sleep(5)
+
         # Month
+        human_click_coords(540, 380)
+        time.sleep(5)
         if attempt == 0:
-            click_image_or_coord("month_field.png", 550, 579)
             month_str = str(config["month"]).lower()
             # Convert "11" to "nov", "01" to "jan", etc. if it's numeric
             month_map = {"01":"jan","1":"jan","02":"feb","2":"feb","03":"mar","3":"mar","04":"apr","4":"apr","05":"may","5":"may","06":"jun","6":"jun","07":"jul","7":"jul","08":"aug","8":"aug","09":"sep","9":"sep","10":"oct","11":"nov","12":"dec"}
             short_month = month_map.get(month_str, month_str[:3])
             clear_and_type(short_month, 5)
-            time.sleep(1)
+            time.sleep(5)
         else:
-            click_image_or_coord("month_field.png", 550, 579)
-            random_delay(0.5, 1.0)
+            random_delay(3, 5)
             month_coords = {
-                "01": (547, 258), "1": (547, 258), "january": (547, 258), "jan": (547, 258),
-                "02": (547, 280), "2": (547, 280), "february": (547, 280), "feb": (547, 280),
-                "03": (544, 295), "3": (544, 295), "march": (544, 295), "mar": (544, 295),
-                "04": (514, 336), "4": (514, 336), "april": (514, 336), "apr": (514, 336),
-                "05": (519, 356), "5": (519, 356), "may": (519, 356),
-                "06": (534, 381), "6": (534, 381), "june": (534, 381), "jun": (534, 381),
-                "07": (537, 403), "7": (537, 403), "july": (537, 403), "jul": (537, 403),
-                "08": (549, 432), "8": (549, 432), "august": (549, 432), "aug": (549, 432),
-                "09": (552, 458), "9": (552, 458), "september": (552, 458), "sep": (552, 458),
-                "10": (550, 487), "october": (550, 487), "oct": (550, 487),
-                "11": (541, 508), "november": (541, 508), "nov": (541, 508),
-                "12": (538, 536), "december": (538, 536), "dec": (538, 536)
+                "01": (560, 394), "1": (560, 394), "january": (560, 394), "jan": (560, 394),
+                "02": (560, 416), "2": (560, 416), "february": (560, 416), "feb": (560, 416),
+                "03": (560, 438), "3": (560, 438), "march": (560, 438), "mar": (560, 438),
+                "04": (560, 460), "4": (560, 460), "april": (560, 460), "apr": (560, 460),
+                "05": (560, 482), "5": (560, 482), "may": (560, 482),
+                "06": (560, 504), "6": (560, 504), "june": (560, 504), "jun": (560, 504),
+                "07": (560, 526), "7": (560, 526), "july": (560, 526), "jul": (560, 526),
+                "08": (560, 548), "8": (560, 548), "august": (560, 548), "aug": (560, 548),
+                "09": (560, 570), "9": (560, 570), "september": (560, 570), "sep": (560, 570),
+                "10": (560, 592), "october": (560, 592), "oct": (560, 592),
+                "11": (560, 614), "november": (560, 614), "nov": (560, 614),
+                "12": (560, 636), "december": (560, 636), "dec": (560, 636)
             }
             target_month = str(config["month"]).lower()
             if target_month in month_coords:
                 mx, my = month_coords[target_month]
                 human_click_coords(mx, my)
-            time.sleep(1)
+            time.sleep(5)
 
         # Day field
-        click_image_or_coord("day_field.png", 661, 590)
+        click_image_or_coord("day_field.png", 650, 380)
         clear_and_type(config["day"], 5)
         print(f"Typed day: {config['day']}")
         time.sleep(2)
         
         # Year field
-        click_image_or_coord("year_field.png", 789, 582)
+        click_image_or_coord("year_field.png", 770, 380)
         clear_and_type(config["year"], 6)
         print(f"Typed year: {config['year']}")
         time.sleep(2)
         
         # Phone field
-        click_image_or_coord("phone_field.png", 525, 687)
+        click_image_or_coord("phone_field.png", 510, 450)
         clear_and_type(config["phone"], 15)
         print(f"Typed phone: {config['phone']}")
-        time.sleep(2)
-        
-        print("Scrolling down to reveal Next button...")
-        pyautogui.scroll(-200)
-        time.sleep(1)
+        time.sleep(2)   
         
         if not human_click_image("next_btn.png"):
-            print("Next button not found.")
-            pyautogui.press("enter")
+            if not human_click_coords(675, 570):
+                raise AutomationError("Next button not found.")
+
         random_delay(5, 8)
         
         if not wait_for_image("month_field.png", timeout=3):
@@ -513,39 +789,47 @@ def main(config, url, proxy=None):
     # 9. Address page
     for attempt in range(2):
         print(f"Address Page - Attempt {attempt + 1}")
-        if attempt == 0:
-            click_image_or_coord("address_field.png", 644, 602)
-            human_type(f"{config['address']} {config['city']} {config['postcode']}")
-            time.sleep(3)
-            human_click_coords(753, 646) # Follow Google suggestion coord
-            
-            click_image_or_coord("apt1.png", 646, 686)
-            if not config.get("apt"):
-                human_type("apt")
-                time.sleep(0.5)
-                for _ in range(3): pyautogui.press('backspace'); time.sleep(0.1)
-            else:
-                human_type(config["apt"])
-        else:
-            print("Retrying address page with manual postcode fallback...")
-            click_image_or_coord("address_field.png", 644, 602)
-            clear_and_type(f"{config['address']} {config['city']} {config['postcode']}", 55)
-            time.sleep(3)
-            human_click_coords(753, 646) # Click suggestion
-            
-            print("Clicking empty space and scrolling...")
-            human_click_coords(100, 100) # Click empty space
+
+        print("Scrolling down on Address page...")
+        check_stop()
+        pyautogui.scroll(-300)
+        time.sleep(1)
+
+        click_image_or_coord("address_field.png", 510, 300)
+        clear_and_type(config["address"], len(config["address"]) + 10)
+        print(f"Typed address line 1: {config['address']}")
+        pyautogui.press("enter")
+        time.sleep(5)
+
+        click_image_or_coord("apt1.png", 510, 350)
+        if not config.get("apt"):
+            human_type("apt")
             time.sleep(0.5)
-            pyautogui.scroll(-200) # Scroll down
-            time.sleep(1)
-            
-            click_image_or_coord("postcode_field.png", 646, 750) # Fallback coord for postcode
-            clear_and_type(config["postcode"], 7)
+            for _ in range(3): pyautogui.press('backspace'); time.sleep(0.1)
+        else:
+            clear_and_type(config["apt"], len(config["apt"]) + 10)
+        print(f"Typed address line 2: {config.get('apt') or '(empty)'}")
+        time.sleep(2)
+
+        human_click_coords(510, 430)
+        clear_and_type(config["city"], len(config["city"]) + 10)
+        print(f"Typed city: {config['city']}")
+        time.sleep(2)
+
+        human_click_coords(510, 520)
+        clear_and_type(config["province"], len(config["province"]) + 10)
+        print(f"Typed province: {config['province']}")
+        time.sleep(2)
+
+        human_click_coords(700, 520)
+        clear_and_type(config["postcode"], len(config["postcode"]) + 10)
+        print(f"Typed postal code: {config['postcode']}")
+        time.sleep(1)
                 
         random_delay(1.5, 2.5)
         if not human_click_image("next_btn.png"):
-            print("Next button not found.")
-            pyautogui.press("enter")
+            if not human_click_coords(670, 610):
+                raise AutomationError("Next button not found.")
         random_delay(5, 8)
         
         if not wait_for_image("address_field.png", timeout=3):
@@ -558,142 +842,83 @@ def main(config, url, proxy=None):
     # 10. Job Status, Signature, Verify
     for attempt in range(2):
         print(f"Job & Signature Page - Attempt {attempt + 1}")
-        if attempt == 0:
-            click_image_or_coord("job_field.png", 704, 564)
-            time.sleep(1)
-            if not human_click_image("unemployed_option.png"):
-                print("Unemployed option image not found, falling back to coord.")
-                human_click_coords(586, 647)
-                
-            click_image_or_coord("signature_field.png", 586, 647)
-            clear_and_type(f"{config['firstName']} {config['lastName']}", 30)
-        else:
-            print("Retrying Job & Signature page with fallback...")
-            # Scroll back up to reset view
-            for _ in range(10): pyautogui.scroll(50); time.sleep(0.1)
-            time.sleep(1)
-            
-            human_click_coords(704, 564) # job coord
-            time.sleep(1)
-            human_click_coords(586, 647) # unemployed option coord
-            
-            human_click_coords(586, 647) # signature coord
-            for _ in range(20): pyautogui.press('right'); time.sleep(0.01)
-            for _ in range(30): pyautogui.press('backspace'); time.sleep(0.01)
-            human_type(f"{config['firstName']}{config['lastName']}")
 
-        # --- SCROLL BEFORE CREATE ACCOUNT ---
-        print("Removing focus from input field before scrolling...")
-        human_click_coords(100, 100)  # Click top-left corner
-        time.sleep(0.3)
-        
-        print("Scrolling to reveal Verify button...")
-        for _ in range(15):
-            pyautogui.scroll(-50)
-            time.sleep(0.1)
-            
-        time.sleep(1.5)
-        if human_click_image("info_correct_checkbox.png"):
-            print("Info correct checkbox found.")
-            
-        random_delay(1, 2)
-        if human_click_image("verify_identity_button.png"):
-            print("Verify identity button clicked successfully.")
-            break
-        print("Verify my identity button not found, triggering retry...")
-    else:
-        raise AutomationError("Verify my identity button not found after 2 attempts.")
+        click_image_or_coord("job_field.png", 510, 531)
+        time.sleep(1)
+        if not human_click_image("unemployed_option.png"):
+            print("Unemployed option image not found, falling back to coord.")
+            if not human_click_coords(510, 550):
+                raise AutomationError("Unemployed option not found.")
 
-    # --- FINAL VERIFICATION AND TERMS ACCEPTANCE ---
-    print("Waiting for success, 'another account', or 'unable to verify' screen...")
-    
-    # Wait loop to check for all three images
-    start_time = time.time()
-    success_found = False
-    another_account_found = False
-    unable_to_verify_found = False
-    
-    while time.time() - start_time < 30:
-        if image_on_screen("success.png", confidence=0.8):
-            success_found = True
-            break
-            
-        if image_on_screen("we_found_another_account.png", confidence=0.8):
-            another_account_found = True
-            break
-
-        if image_on_screen("we_couldnt_verify_your_data1.png", confidence=0.8):
-            unable_to_verify_found = True
-            break
-            
+        human_click_coords(*SIGNATURE_FIELD_COORDS)
+        time.sleep(1)
+        signature_text = format_signature(config)
+        clear_and_type(signature_text, backspace_count=40)
+        print(f"Typed signature: {signature_text}")
         time.sleep(1)
 
-    is_created = False
-    status = "failed"
-    
-    if unable_to_verify_found:
-        print("'We couldn't verify your data' image detected. Taking screenshot and ending.")
+        print("Removing focus from signature field before scrolling...")
+        human_click_coords(683, 350)
+        time.sleep(0.5)
+
+        print("Scrolling down on Job Status page...")
+        check_stop()
+        scroll_job_signature_page(clicks=2, amount=-200)
+        time.sleep(1)
+
+        if not click_info_correct_checkbox():
+            print("Checkbox click failed, retrying...")
+            continue
+        time.sleep(1)
+
+        print("Scrolling to reveal Verify button...")
+        scroll_job_signature_page(clicks=1, amount=-200)
+        time.sleep(1)
+
+        random_delay(1, 2)
+        if not click_verify_identity_button():
+            print("Verify my identity button not found, triggering retry...")
+            continue
+
+        print("Waiting for page to advance after verify...")
+        time.sleep(15)
+        if not on_job_signature_page():
+            print("Left job/signature page after verify.")
+            break
+        print("Still on job/signature page after verify; retrying...")
+    else:
+        if on_job_signature_page():
+            raise AutomationError("Stuck on job/signature page after verify.")
+        print("Left job/signature page; continuing to welcome onboarding.")
+
+    # --- FINAL VERIFICATION AND WELCOME ONBOARDING ---
+    post_verify_outcome = wait_for_post_verify_outcome()
+
+    if post_verify_outcome == RESULT_UNABLE_TO_VERIFY:
+        print("'We couldn't verify your data' screen detected. Taking screenshot and ending.")
         take_result_screenshot(prefix="unable_to_verify")
         print("Automation finished for this account due to verification failure.")
         return False, RESULT_UNABLE_TO_VERIFY
-    
-    if another_account_found:
-        print("'We found another account' image detected. Taking screenshot and ending.")
+
+    if post_verify_outcome == RESULT_WE_FOUND_ANOTHER_ACCOUNT:
+        print("'We found another account' screen detected. Taking screenshot and ending.")
         take_result_screenshot(prefix="we_found_another_account")
-        # Do not mark as created, but we handled it gracefully.
         print("Automation finished for this account due to finding another account.")
         return False, RESULT_WE_FOUND_ANOTHER_ACCOUNT
-    
-    if success_found:
-        print("Success image found, clicking to accept terms.")
-        human_click_image("success.png")
-        
-        time.sleep(2)
-        print("Scrolling down (-200 to -250)...")
-        scroll_amount = random.randint(500, 550)
-        pyautogui.scroll(-scroll_amount)
-        time.sleep(3)
-        
-        print("Looking for first continue image...")
-        if human_click_image("continue1.png", confidence=0.8):
-            print("First continue clicked.")
-        else:
-            print("First continue image not found, proceeding anyway...")
-            
-        time.sleep(10)
-        
-        print("Scrolling down again (-200 to -250)...")
-        scroll_amount = random.randint(400, 450)
-        pyautogui.scroll(-scroll_amount)
-        time.sleep(2)
-        
-        print("Looking for second continue image...")
-        if human_click_image("continue1.png", confidence=0.8):
-            print("Second continue clicked.")
-        else:
-            print("Second continue image not found, proceeding anyway...")
-            
-        time.sleep(15)
-        
-        print("Scrolling down one last time (-700)...")
-        pyautogui.scroll(-700)
-        time.sleep(2)
-        
-        print("Looking for 'do it later' image...")
-        if human_click_image("do_it_later.png", confidence=0.8):
-            print("'Do it later' clicked.")
-            time.sleep(15)
-        else:
-            print("'Do it later' image not found, proceeding anyway...")
-            
-        is_created = True
-        status = RESULT_CREATED
-    else:
-        print("Success image not found after verification. Marking as standard success instead of created.")
-        status = RESULT_SUCCESS_NOT_CREATED
 
+    if post_verify_outcome != RESULT_CREATED:
+        print(
+            "No known post-verify screen detected after waiting. "
+            "Taking screenshot and ending without creating account."
+        )
+        take_result_screenshot(prefix="post_verify_unknown")
+        return False, RESULT_SUCCESS_NOT_CREATED
+
+    print("Proceeding with welcome onboarding after job/signature page...")
+    time.sleep(5)
+    complete_welcome_onboarding()
     print("Automation finished for this account.")
-    return is_created, status
+    return True, RESULT_CREATED
 
 def take_result_screenshot(prefix="result"):
     """Takes a screenshot and saves it to a dated folder inside images_result."""
